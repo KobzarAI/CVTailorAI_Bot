@@ -1,0 +1,44 @@
+{
+  "terms": [
+    {
+      "term": "Figma",
+      "type": "skill",
+      "used": true,
+      "answer_raw": "Yes. I did. Figma - skill Raw Answer",
+      "generated_bullet": "Figma - skill pro bullet",
+      "company": "MGID Inc."
+    },
+    {
+      "term": "Jira",
+      "type": "skill",
+      "used": true,
+      "answer_raw": "Jira - skill raw answer",
+      "generated_bullet": "Jira - skill pro bullet",
+      "company": "MGID Inc."
+    }, 
+    {
+      "term": "Tableau",
+      "type": "skill",
+      "used": false,
+      "answer_raw": "no",
+      "generated_bullet": "",
+      "company": ""
+    }, 
+    {
+      "term": "Dating",
+      "type": "keyword",
+      "used": true,
+      "answer_raw": "Dating - keyword raw answer",
+      "generated_bullet": "Dating - keyword pro bullet",
+      "company": "LoopMe LTD"
+    }, 
+    {
+      "term": "Technical Support",
+      "type": "keyword",
+      "used": true,
+      "answer_raw": "Technical Support - keyword raw answer",
+      "generated_bullet": "Technical Support - keyword pro bullet",
+      "company": "LoopMe LTD"
+    }
+  ]
+}
