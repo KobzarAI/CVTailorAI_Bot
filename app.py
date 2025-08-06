@@ -63,7 +63,7 @@ def format_google_doc_content(input_data):
     """
     Форматирует содержимое Google Docs на основе префиксов для batchUpdate API.
     input_data — словарь с ключом 'content': массив параграфов,
-      каждый из которых содержит 'text', 'startIndex' и 'endIndex'.
+    каждый из которых содержит вложенную структуру, как отдаёт Google Docs API.
 
     Префиксы:
       <h1>: жирный, Lexend 16pt
@@ -73,8 +73,9 @@ def format_google_doc_content(input_data):
       <b1>: НЕ жирный, Lexend 8pt, ненумерованный список
       <b2>: НЕ жирный, Lexend 8pt, обычный текст
 
-    Возвращает {'requests': ...} для передачи в Google Docs API.
+    Возвращает словарь с ключом 'requests' - список команд для Google Docs API batchUpdate.
     """
+
     styles = {
         '<h1>': {'fontSize': 16, 'bold': True,  'alignment': 'START', 'list': None},
         '<h2>': {'fontSize': 12, 'bold': True,  'alignment': 'START', 'list': None},
@@ -88,14 +89,25 @@ def format_google_doc_content(input_data):
     content = input_data.get('content', [])
 
     for para in content:
-        text = para.get('text', '')
         start = para.get('startIndex', 0)
         end = para.get('endIndex', 0)
 
+        # Извлекаем текст из вложенной структуры paragraph.elements[].textRun.content
+        paragraph = para.get('paragraph', {})
+        elements = paragraph.get('elements', [])
+        text = ""
+
+        for el in elements:
+            textRun = el.get('textRun')
+            if textRun and 'content' in textRun:
+                text += textRun['content']
+
+        # Проверяем префиксы и формируем requests
         for prefix, style in styles.items():
             if text.startswith(prefix):
                 prefix_len = len(prefix)
-                # Удаляем префикс
+
+                # Удаляем префикс из документа (deleteContentRange)
                 requests.append({
                     'deleteContentRange': {
                         'range': {
@@ -104,8 +116,10 @@ def format_google_doc_content(input_data):
                         }
                     }
                 })
+
                 text_start = start + prefix_len
-                # Стиль текста
+
+                # Обновляем стиль текста
                 requests.append({
                     'updateTextStyle': {
                         'range': {'startIndex': text_start, 'endIndex': end},
@@ -117,7 +131,8 @@ def format_google_doc_content(input_data):
                         'fields': 'bold,fontSize,weightedFontFamily'
                     }
                 })
-                # Стиль параграфа (выравнивание)
+
+                # Обновляем стиль параграфа (выравнивание)
                 requests.append({
                     'updateParagraphStyle': {
                         'range': {'startIndex': text_start, 'endIndex': end},
@@ -125,7 +140,8 @@ def format_google_doc_content(input_data):
                         'fields': 'alignment'
                     }
                 })
-                # Если это пункт списка — применяем bullets
+
+                # Если нужно применить bullets (маркированный список)
                 if style['list'] is not None:
                     requests.append({
                         'createParagraphBullets': {
@@ -133,7 +149,8 @@ def format_google_doc_content(input_data):
                             'bulletPreset': style['list']
                         }
                     })
-                break
+
+                break  # Подошёл один префикс — не проверяем остальные
 
     return {'requests': requests}
 
