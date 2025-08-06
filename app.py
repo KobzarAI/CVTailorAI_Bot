@@ -111,12 +111,9 @@ def format_google_doc_content(input_data):
 
     requests = []
 
-    # Общий сдвиг индексов - символов удалённых ДО текущей операции
-    total_offset = 0
+    total_offset = 0  # Общий сдвиг индексов - символов удалённых ДО текущей операции
 
-    # Для каждого найденного префикса с конца документа к началу
     for item in found_items:
-        # Скорректируем индексы с учётом уже удалённых символов
         adjusted_start = item['start'] - total_offset
         adjusted_end = item['end'] - total_offset
         prefix_len = item['prefix_len']
@@ -124,7 +121,6 @@ def format_google_doc_content(input_data):
 
         # Проверяем валидность индексов
         if adjusted_start < 0 or adjusted_end <= adjusted_start:
-            # Некорректные индексы — пропускаем
             continue
 
         # Удаляем префикс
@@ -137,18 +133,19 @@ def format_google_doc_content(input_data):
             }
         })
 
-        # Обновляем стиль, начиная с позиции после удалённого префикса
-        text_start = adjusted_start + prefix_len
+        # Новый диапазон после удаления префикса для форматирования —
+        # начинаем с adjusted_start, заканчиваем на adjusted_end - prefix_len
+        style_start = adjusted_start
+        style_end = adjusted_end - prefix_len
 
-        if text_start >= adjusted_end:
-            # Если после удаления префикса не осталось текста — пропускаем дальнейшие операции
+        if style_start >= style_end:
             total_offset += prefix_len
-            continue
+            continue  # после удаления префикса пустой диапазон для стилей
 
         # Обновляем стиль текста
         requests.append({
             'updateTextStyle': {
-                'range': {'startIndex': text_start, 'endIndex': adjusted_end},
+                'range': {'startIndex': style_start, 'endIndex': style_end},
                 'textStyle': {
                     'bold': style['bold'],
                     'fontSize': {'magnitude': style['fontSize'], 'unit': 'PT'},
@@ -161,7 +158,7 @@ def format_google_doc_content(input_data):
         # Обновляем стиль параграфа
         requests.append({
             'updateParagraphStyle': {
-                'range': {'startIndex': text_start, 'endIndex': adjusted_end},
+                'range': {'startIndex': style_start, 'endIndex': style_end},
                 'paragraphStyle': {'alignment': style['alignment']},
                 'fields': 'alignment'
             }
@@ -171,12 +168,12 @@ def format_google_doc_content(input_data):
         if style['list'] is not None:
             requests.append({
                 'createParagraphBullets': {
-                    'range': {'startIndex': text_start, 'endIndex': adjusted_end},
+                    'range': {'startIndex': style_start, 'endIndex': style_end},
                     'bulletPreset': style['list']
                 }
             })
 
-        # Увеличиваем сдвиг на длину удалённого префикса
+        # Обновляем общий сдвиг индексов
         total_offset += prefix_len
 
     return {'requests': requests}
