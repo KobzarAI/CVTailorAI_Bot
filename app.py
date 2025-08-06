@@ -111,11 +111,9 @@ def format_google_doc_content(input_data):
 
     requests = []
 
-    total_offset = 0  # Общий сдвиг индексов - символов удалённых ДО текущей операции
-
     for item in found_items:
-        adjusted_start = item['start'] - total_offset
-        adjusted_end = item['end'] - total_offset
+        adjusted_start = item['start']
+        adjusted_end = item['end']
         prefix_len = item['prefix_len']
         style = item['style']
 
@@ -139,7 +137,6 @@ def format_google_doc_content(input_data):
         style_end = adjusted_end - prefix_len
 
         if style_start >= style_end:
-            total_offset += prefix_len
             continue  # после удаления префикса пустой диапазон для стилей
 
         # Обновляем стиль текста
@@ -172,9 +169,6 @@ def format_google_doc_content(input_data):
                     'bulletPreset': style['list']
                 }
             })
-
-        # Обновляем общий сдвиг индексов
-        total_offset += prefix_len
 
     return {'requests': requests}
 
