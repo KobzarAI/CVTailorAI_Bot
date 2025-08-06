@@ -62,20 +62,10 @@ def merge_jsons(master_resume, terms):
 def format_google_doc_content(input_data):
     """
     Форматирует содержимое Google Docs на основе префиксов для batchUpdate API.
-    input_data — словарь с ключом 'content': массив параграфов,
-    каждый из которых содержит вложенную структуру, как отдаёт Google Docs API.
+    Учитывает смещение индексов из-за удаления префиксов и сортирует запросы с конца документа.
 
-    Префиксы:
-      <h1>: жирный, Lexend 16pt
-      <h2>: жирный, Lexend 12pt
-      <h3>: обычный, Lexend 11pt
-      <h4>: обычный, Lexend 8pt
-      <b1>: НЕ жирный, Lexend 8pt, ненумерованный список
-      <b2>: НЕ жирный, Lexend 8pt, обычный текст
-
-    Возвращает словарь с ключом 'requests' - список команд для Google Docs API batchUpdate.
+    input_data — словарь с ключом 'content': массив параграфов с вложенной структурой
     """
-
     styles = {
         '<h1>': {'fontSize': 16, 'bold': True,  'alignment': 'START', 'list': None},
         '<h2>': {'fontSize': 12, 'bold': True,  'alignment': 'START', 'list': None},
@@ -88,69 +78,88 @@ def format_google_doc_content(input_data):
     requests = []
     content = input_data.get('content', [])
 
+    # Сохраним промежуточные данные для последующей сортировки
+    temp_requests = []
+
     for para in content:
         start = para.get('startIndex', 0)
         end = para.get('endIndex', 0)
 
-        # Извлекаем текст из вложенной структуры paragraph.elements[].textRun.content
         paragraph = para.get('paragraph', {})
         elements = paragraph.get('elements', [])
         text = ""
-
         for el in elements:
             textRun = el.get('textRun')
             if textRun and 'content' in textRun:
                 text += textRun['content']
 
-        # Проверяем префиксы и формируем requests
         for prefix, style in styles.items():
             if text.startswith(prefix):
                 prefix_len = len(prefix)
 
-                # Удаляем префикс из документа (deleteContentRange)
-                requests.append({
-                    'deleteContentRange': {
-                        'range': {
-                            'startIndex': start,
-                            'endIndex': start + prefix_len
-                        }
-                    }
+                temp_requests.append({
+                    'start': start,
+                    'prefix_len': prefix_len,
+                    'style': style,
+                    'end': end
                 })
+                break
 
-                text_start = start + prefix_len
+    # Отсортируем temp_requests по startIndex по убыванию — сначала операции с максимальным startIndex
+    temp_requests.sort(key=lambda x: x['start'], reverse=True)
 
-                # Обновляем стиль текста
-                requests.append({
-                    'updateTextStyle': {
-                        'range': {'startIndex': text_start, 'endIndex': end},
-                        'textStyle': {
-                            'bold': style['bold'],
-                            'fontSize': {'magnitude': style['fontSize'], 'unit': 'PT'},
-                            'weightedFontFamily': {'fontFamily': 'Lexend'}
-                        },
-                        'fields': 'bold,fontSize,weightedFontFamily'
-                    }
-                })
+    offset = 0  # на сколько символов уже сместились индексы из-за удалений
 
-                # Обновляем стиль параграфа (выравнивание)
-                requests.append({
-                    'updateParagraphStyle': {
-                        'range': {'startIndex': text_start, 'endIndex': end},
-                        'paragraphStyle': {'alignment': style['alignment']},
-                        'fields': 'alignment'
-                    }
-                })
+    for req in temp_requests:
+        adjusted_start = req['start'] - offset
+        adjusted_end = req['end'] - offset
+        prefix_len = req['prefix_len']
+        style = req['style']
 
-                # Если нужно применить bullets (маркированный список)
-                if style['list'] is not None:
-                    requests.append({
-                        'createParagraphBullets': {
-                            'range': {'startIndex': text_start, 'endIndex': end},
-                            'bulletPreset': style['list']
-                        }
-                    })
+        # Удаляем префикс (deleteContentRange)
+        requests.append({
+            'deleteContentRange': {
+                'range': {
+                    'startIndex': adjusted_start,
+                    'endIndex': adjusted_start + prefix_len
+                }
+            }
+        })
 
-                break  # Подошёл один префикс — не проверяем остальные
+        text_start = adjusted_start + prefix_len
+
+        # Обновляем стиль текста
+        requests.append({
+            'updateTextStyle': {
+                'range': {'startIndex': text_start, 'endIndex': adjusted_end},
+                'textStyle': {
+                    'bold': style['bold'],
+                    'fontSize': {'magnitude': style['fontSize'], 'unit': 'PT'},
+                    'weightedFontFamily': {'fontFamily': 'Lexend'}
+                },
+                'fields': 'bold,fontSize,weightedFontFamily'
+            }
+        })
+
+        # Обновляем стиль параграфа (выравнивание)
+        requests.append({
+            'updateParagraphStyle': {
+                'range': {'startIndex': text_start, 'endIndex': adjusted_end},
+                'paragraphStyle': {'alignment': style['alignment']},
+                'fields': 'alignment'
+            }
+        })
+
+        # Применяем bullets, если нужно
+        if style['list'] is not None:
+            requests.append({
+                'createParagraphBullets': {
+                    'range': {'startIndex': text_start, 'endIndex': adjusted_end},
+                    'bulletPreset': style['list']
+                }
+            })
+
+        offset += prefix_len  # увеличиваем смещение для последующих запросов
 
     return {'requests': requests}
 
