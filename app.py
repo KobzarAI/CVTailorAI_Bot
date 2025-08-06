@@ -61,10 +61,9 @@ def merge_jsons(master_resume, terms):
 
 def format_google_doc_content(input_data):
     """
-    Форматирует содержимое Google Docs на основе префиксов для batchUpdate API.
-    Учитывает смещение индексов из-за удаления префиксов и сортирует запросы с конца документа.
-
-    input_data — словарь с ключом 'content': массив параграфов с вложенной структурой
+    Форматирует Google Docs контент, учитывая вложенную структуру.
+    Удаляет префиксы и применяет стили в одном batchUpdate запросе.
+    Корректно учитывает индексные сдвиги для каждого удаления.
     """
     styles = {
         '<h1>': {'fontSize': 16, 'bold': True,  'alignment': 'START', 'list': None},
@@ -75,11 +74,10 @@ def format_google_doc_content(input_data):
         '<b2>': {'fontSize': 8,  'bold': False, 'alignment': 'START', 'list': None}
     }
 
-    requests = []
     content = input_data.get('content', [])
 
-    # Сохраним промежуточные данные для последующей сортировки
-    temp_requests = []
+    # Сначала собираем все найденные параграфы с префиксами в список
+    found_items = []
 
     for para in content:
         start = para.get('startIndex', 0)
@@ -87,46 +85,65 @@ def format_google_doc_content(input_data):
 
         paragraph = para.get('paragraph', {})
         elements = paragraph.get('elements', [])
-        text = ""
+
+        # Получаем весь текст параграфа (конкатенация содержимого всех textRun)
+        text = ''
         for el in elements:
             textRun = el.get('textRun')
             if textRun and 'content' in textRun:
                 text += textRun['content']
 
+        # Ищем какой префикс используется
         for prefix, style in styles.items():
             if text.startswith(prefix):
                 prefix_len = len(prefix)
-
-                temp_requests.append({
+                found_items.append({
                     'start': start,
+                    'end': end,
                     'prefix_len': prefix_len,
                     'style': style,
-                    'end': end
+                    'text': text,
                 })
-                break
+                break  # префикс найден — можно дальше не искать
 
-    # Отсортируем temp_requests по startIndex по убыванию — сначала операции с максимальным startIndex
-    temp_requests.sort(key=lambda x: x['start'], reverse=True)
+    # Сортируем по start индексу в порядке убывания (чтобы работать с конца документа)
+    found_items.sort(key=lambda x: x['start'], reverse=True)
 
-    offset = 0  # на сколько символов уже сместились индексы из-за удалений
+    requests = []
 
-    for req in temp_requests:
-        adjusted_start = req['start'] - offset
-        adjusted_end = req['end'] - offset
-        prefix_len = req['prefix_len']
-        style = req['style']
+    # Общий сдвиг индексов - символов удалённых ДО текущей операции
+    total_offset = 0
 
-        # Удаляем префикс (deleteContentRange)
+    # Для каждого найденного префикса с конца документа к началу
+    for item in found_items:
+        # Скорректируем индексы с учётом уже удалённых символов
+        adjusted_start = item['start'] - total_offset
+        adjusted_end = item['end'] - total_offset
+        prefix_len = item['prefix_len']
+        style = item['style']
+
+        # Проверяем валидность индексов
+        if adjusted_start < 0 or adjusted_end <= adjusted_start:
+            # Некорректные индексы — пропускаем
+            continue
+
+        # Удаляем префикс
         requests.append({
             'deleteContentRange': {
                 'range': {
                     'startIndex': adjusted_start,
-                    'endIndex': adjusted_start + prefix_len
+                    'endIndex': adjusted_start + prefix_len,
                 }
             }
         })
 
+        # Обновляем стиль, начиная с позиции после удалённого префикса
         text_start = adjusted_start + prefix_len
+
+        if text_start >= adjusted_end:
+            # Если после удаления префикса не осталось текста — пропускаем дальнейшие операции
+            total_offset += prefix_len
+            continue
 
         # Обновляем стиль текста
         requests.append({
@@ -141,7 +158,7 @@ def format_google_doc_content(input_data):
             }
         })
 
-        # Обновляем стиль параграфа (выравнивание)
+        # Обновляем стиль параграфа
         requests.append({
             'updateParagraphStyle': {
                 'range': {'startIndex': text_start, 'endIndex': adjusted_end},
@@ -150,7 +167,7 @@ def format_google_doc_content(input_data):
             }
         })
 
-        # Применяем bullets, если нужно
+        # Если нужно — применяем списки
         if style['list'] is not None:
             requests.append({
                 'createParagraphBullets': {
@@ -159,7 +176,8 @@ def format_google_doc_content(input_data):
                 }
             })
 
-        offset += prefix_len  # увеличиваем смещение для последующих запросов
+        # Увеличиваем сдвиг на длину удалённого префикса
+        total_offset += prefix_len
 
     return {'requests': requests}
 
