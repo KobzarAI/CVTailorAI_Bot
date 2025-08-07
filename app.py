@@ -71,7 +71,7 @@ def format_google_doc_content(input_data):
         '<h3>': {'fontSize': 11, 'bold': False, 'alignment': 'START', 'list': None},
         '<h4>': {'fontSize': 8,  'bold': False, 'alignment': 'START', 'list': None},
         '<b1>': {'fontSize': 8,  'bold': False, 'alignment': 'START', 'list': 'BULLET_DISC_CIRCLE_SQUARE'},
-        '<b2>': {'fontSize': 8,  'bold': False, 'alignment': 'START', 'list': None}
+        '<b2>': {'fontSize': 8,  'bold': False, 'alignment': 'START', 'list': None, 'indentFirstLine': {'magnitude': 21.259842519685044, 'unit': 'PT'}, 'indentStart': {'magnitude': 21.259842519685044, 'unit': 'PT'}}
     }
 
     content = input_data.get('content', [])
@@ -153,11 +153,24 @@ def format_google_doc_content(input_data):
         })
 
         # Обновляем стиль параграфа
+        # Формируем paragraphStyle динамически, включая только поля из текущего стиля
+        paragraph_style = {'alignment': style['alignment']}
+
+        # Опциональные поля для отступов, которые есть только у некоторых стилей (например у <b2>)
+        if 'indentFirstLine' in style:
+            paragraph_style['indentFirstLine'] = style['indentFirstLine']
+        if 'indentStart' in style:
+            paragraph_style['indentStart'] = style['indentStart']
+
+        # Формируем fields из ключей paragraph_style (например 'alignment,indentFirstLine,indentStart')
+        fields = ','.join(paragraph_style.keys())
+
+        # Добавляем запрос в requests
         requests.append({
             'updateParagraphStyle': {
                 'range': {'startIndex': style_start, 'endIndex': style_end},
-                'paragraphStyle': {'alignment': style['alignment']},
-                'fields': 'alignment'
+                'paragraphStyle': paragraph_style,
+                'fields': fields
             }
         })
 
