@@ -197,21 +197,21 @@ def find_gaps_and_update_master(extract, master_resume):
     add missing terms to unconfirmed section of master_resume.
     Return updated master_resume.
     """
-    # Prepare sets of origin skill/keyword terms in master
-    origin_hard_skills = set(
+    # Prepare sets of skill/keyword terms in master which are confirmed
+    hard_skills = set(
         s["term"].lower()
         for s in master_resume.get("skills", {}).get("hard_skills", [])
-        if s.get("origin", False)
+        if s.get("confirmed_by") and len(s["confirmed_by"]) > 0
     )
-    origin_soft_skills = set(
+    soft_skills = set(
         s["term"].lower()
         for s in master_resume.get("skills", {}).get("soft_skills", [])
-        if s.get("origin", False)
+        if s.get("confirmed_by") and len(s["confirmed_by"]) > 0
     )
-    origin_keywords = set(
+    keywords = set(
         k["term"].lower()
         for k in master_resume.get("keywords", [])
-        if k.get("origin", False)
+        if s.get("confirmed_by") and len(s["confirmed_by"]) > 0
     )
 
     # Initialize unconfirmed if absent
@@ -236,19 +236,19 @@ def find_gaps_and_update_master(extract, master_resume):
         term = skill_req["term"]
         typ = skill_req.get("type", "hard")
         term_lower = term.lower()
-        # Determine if in origin master
+        # Determine if in master
         if typ == "hard":
-            if term_lower not in origin_hard_skills and not term_in_list(term, master_resume.get("skills", {}).get("hard_skills", [])):
+            if term_lower not in hard_skills and not term_in_list(term, master_resume.get("skills", {}).get("hard_skills", [])):
                 add_unconfirmed_skill(term)
         elif typ == "soft":
-            if term_lower not in origin_soft_skills and not term_in_list(term, master_resume.get("skills", {}).get("soft_skills", [])):
+            if term_lower not in soft_skills and not term_in_list(term, master_resume.get("skills", {}).get("soft_skills", [])):
                 add_unconfirmed_skill(term)
 
     # Check keywords
     for keyword_req in extract.get("required_keywords", []):
         term = keyword_req["term"]
         term_lower = term.lower()
-        if term_lower not in origin_keywords and not term_in_list(term, master_resume.get("keywords", [])):
+        if term_lower not in keywords and not term_in_list(term, master_resume.get("keywords", [])):
             add_unconfirmed_keyword(term)
 
     return master_resume
@@ -317,52 +317,94 @@ def gather_all_current_terms(master_resume):
 
 def filter_and_rank_bullets(master_resume, extract):
     """
-    Filter experience bullets to keep only those which use skills or keywords present in extract,
-    consider synonyms;
-    Rank skills and keywords by priority from extract;
-    Return filtered and re-ranked adapted resume.
+    Фильтрует пункты опыта по навыкам/ключевым словам из extract, учитывая синонимы.
+    Оставляет в experience у каждой компании количество буллетов = round(duration_years) (+1 при наличии релевантных)
+    Сортирует релевантные буллеты по приоритету из extract (чем меньше, тем лучше).
+    Если релевантных меньше лимита, добирает из нерелевантных по их изначальному порядку.
+    Возвращает обновленное адаптированное резюме.
     """
-    # Build a set of all relevant terms from extract with synonyms
+    # Собираем множество всех релевантных терминов (термин + синонимы, в нижнем регистре)
     relevant_terms = set()
+    priority_map = {}  # map term -> priority из extract
     for group in ["required_skills", "required_keywords"]:
         for item in extract.get(group, []):
-            # add main term and all synonyms lowercased
-            relevant_terms.add(item["term"].lower())
+            term_lower = item["term"].lower()
+            relevant_terms.add(term_lower)
+            priority_map[term_lower] = item.get("priority", 1000)
             for syn in item.get("synonyms", []):
-                relevant_terms.add(syn.lower())
+                syn_lower = syn.lower()
+                relevant_terms.add(syn_lower)
+                if syn_lower not in priority_map or item.get("priority", 1000) < priority_map.get(syn_lower, 1000):
+                    priority_map[syn_lower] = item.get("priority", 1000)
 
-    # Filter bullets with any skill or keyword in relevant_terms
     adapted_experience = []
     for exp in master_resume.get("experience", []):
-        filtered_bullets = []
-        for bullet in exp.get("bullets", []):
+        duration_years = exp.get("duration_years", 0)
+        limit = round(duration_years)  # округляем математически
+        # Собираем буллеты с оценкой релевантности и порядком
+        bullets_with_meta = []
+        for idx, bullet in enumerate(exp.get("bullets", [])):
             bullet_skills = [s.lower() for s in bullet.get("skills_used", [])]
             bullet_keywords = [k.lower() for k in bullet.get("keyword_used", [])]
-            if any(term in relevant_terms for term in bullet_skills + bullet_keywords):
-                filtered_bullets.append(bullet)
+            bullet_terms = bullet_skills + bullet_keywords
+            # Определяем релевантность и min приоритет среди терминов буллета
+            bullet_relevant_terms = [t for t in bullet_terms if t in relevant_terms]
+            if bullet_relevant_terms:
+                bullet_priority = min(priority_map[t] for t in bullet_relevant_terms)
+            else:
+                bullet_priority = None  # нерелевантный
+
+            bullets_with_meta.append({
+                "bullet": bullet,
+                "priority": bullet_priority,
+                "original_idx": idx
+            })
+        # Отделяем релевантные от нерелевантных
+        relevant_bullets = [b for b in bullets_with_meta if b["priority"] is not None]
+        non_relevant_bullets = [b for b in bullets_with_meta if b["priority"] is None]
+
+        # Сортируем релевантные по priority (меньше=выше)
+        relevant_bullets.sort(key=lambda x: x["priority"])
+
+        # Лимит +1 буллет если есть дополнительные релевантные буллеты сверх лимита
+        extra_bullet = 1 if len(relevant_bullets) > limit else 0
+        max_bullets = limit + extra_bullet
+
+        # Отбираем релевантные до лимита (или лимит+1)
+        selected_bullets = relevant_bullets[:max_bullets]
+
+        # Если релевантных меньше лимита, добираем нерелевантных по исходному порядку
+        if len(selected_bullets) < limit:
+            needed = limit - len(selected_bullets)
+            # Необходимо отобрать 'needed' первых нерелевантных по original_idx
+            non_relevant_bullets.sort(key=lambda x: x["original_idx"])
+            selected_bullets.extend(non_relevant_bullets[:needed])
+
+        # В итог записываем только буллеты, извлекая из структуры
+        filtered_bullets = [b["bullet"] for b in selected_bullets]
+
         if filtered_bullets:
             exp_copy = exp.copy()
             exp_copy["bullets"] = filtered_bullets
             adapted_experience.append(exp_copy)
 
-    # Sort skills and keywords by priority from extract; keep only relevant
+    # Сортировка и фильтрация skills и keywords по приоритету из extract (как было)
     def sort_terms_by_priority(terms, extract_list):
         extract_priority_map = {item["term"].lower(): item.get("priority", 1000) for item in extract_list}
-        # Keep only those in extract and sort by priority ascending
         filtered = [t for t in terms if t["term"].lower() in extract_priority_map]
         return sorted(filtered, key=lambda t: extract_priority_map[t["term"].lower()])
 
     adapted_hard_skills = sort_terms_by_priority(
-        [s for s in master_resume.get("skills", {}).get("hard_skills", [])], extract.get("required_skills", [])
+        master_resume.get("skills", {}).get("hard_skills", []), extract.get("required_skills", [])
     )
     adapted_soft_skills = sort_terms_by_priority(
-        [s for s in master_resume.get("skills", {}).get("soft_skills", [])], extract.get("required_skills", [])
+        master_resume.get("skills", {}).get("soft_skills", []), extract.get("required_skills", [])
     )
     adapted_keywords = sort_terms_by_priority(
         master_resume.get("keywords", []), extract.get("required_keywords", [])
     )
 
-    # Build adapted master resume copy
+    # Создаём копию мастер резюме и заменяем там адаптированные секции
     adapted_master = master_resume.copy()
     adapted_master["experience"] = adapted_experience
     adapted_master["skills"]["hard_skills"] = adapted_hard_skills
