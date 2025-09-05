@@ -10,13 +10,11 @@ from resume_utils import (
     match_terms,
     calculate_match_percent,
     gather_origin_terms,
-    gather_all_current_terms
+    gather_all_current_terms,
+    unconfirmed2terms
 )
 
-
 app = FastAPI()
-
-
 
 @app.post("/merge")
 async def merge_endpoint(request: Request):
@@ -82,3 +80,10 @@ async def generate_adapted_resume_endpoint(request: Request):
         "match_base": match_base,
         "match_adjusted": match_adjusted
     })
+
+
+@app.post("/unconfirmed_to_terms")
+async def unconfirmed_to_terms_endpoint(request: Request):
+    data = await request.json()
+    result = unconfirmed2terms(data)
+    return JSONResponse(content=result)
