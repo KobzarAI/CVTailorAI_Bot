@@ -415,9 +415,11 @@ def filter_and_rank_bullets(master_resume, extract):
 
 
 def unconfirmed2terms(input_data):
+    unconfirmed = input_data.get("unconfirmed", {})
+
     terms = []
-    skills = input_data.get("skills", [])
-    keywords = input_data.get("keywords", [])
+    skills = unconfirmed.get("skills", [])
+    keywords = unconfirmed.get("keywords", [])
 
     for skill in skills:
         terms.append({
