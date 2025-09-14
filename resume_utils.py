@@ -415,35 +415,28 @@ def filter_and_rank_bullets(master_resume, extract):
 
 
 def unconfirmed2terms(input_data):
-    # Результирующий список terms
+    # input_data ожидается с ключом m_unconfirmed, внутри которого dict со skills/keywords
     terms = []
-    
-    # Проверка наличия блока unconfirmed и списков skills, keywords
-    if "unconfirmed" in input_data:
-        unconfirmed = input_data["unconfirmed"]
-        skills = unconfirmed.get("skills", [])
-        keywords = unconfirmed.get("keywords", [])
-        
-        # Обработка skills
-        for skill in skills:
-            terms.append({
-                "term": skill,
-                "type": "skill",
-                "used": True,
-                "answer_raw": "",
-                "generated_bullet": "",
-                "company": ""
-            })
-        
-        # Обработка keywords
-        for keyword in keywords:
-            terms.append({
-                "term": keyword,
-                "type": "keyword",
-                "used": True,
-                "answer_raw": "",
-                "generated_bullet": "",
-                "company": ""
-            })
-    
+    unconfirmed = input_data.get("m_unconfirmed", {})
+    skills = unconfirmed.get("skills", [])
+    keywords = unconfirmed.get("keywords", [])
+
+    for skill in skills:
+        terms.append({
+            "term": skill,
+            "type": "skill",
+            "used": True,
+            "answer_raw": "",
+            "generated_bullet": "",
+            "company": ""
+        })
+    for keyword in keywords:
+        terms.append({
+            "term": keyword,
+            "type": "keyword",
+            "used": True,
+            "answer_raw": "",
+            "generated_bullet": "",
+            "company": ""
+        })
     return {"terms": terms}
