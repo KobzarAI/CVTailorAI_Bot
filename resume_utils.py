@@ -447,7 +447,5 @@ def buttons(data: dict) -> dict:
     inline_keyboard = [[{"text": c, "callback_data": c}] for c in companies]
     
     return {
-        "buttons": {
-            "inline_keyboard": inline_keyboard
-        }
+        "inline_keyboard": inline_keyboard
     }
