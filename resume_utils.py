@@ -9,7 +9,7 @@ def merge_jsons(master_resume, terms):
         if term['used']:
             company_found = False
             for experience in master_resume['experience']:
-                if experience['company'] == term['company']:
+                if experience['company'].lower() == term['company'].lower():
                     company_found = True
                     new_bullet_id = new_bullet_id + 1
                     new_bullet = {
