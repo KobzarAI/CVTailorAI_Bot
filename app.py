@@ -87,3 +87,10 @@ async def unconfirmed_to_terms_endpoint(request: Request):
     data = await request.json()
     result = unconfirmed2terms(data)
     return JSONResponse(content=result)
+
+
+@app.post("/buttons")
+async def buttons_endpoint(request: Request):
+    data = await request.json()
+    result = buttons(data)
+    return JSONResponse(content=result)

@@ -440,3 +440,14 @@ def unconfirmed2terms(input_data):
             "company": ""
         })
     return {"terms": terms}
+
+def buttons(data: dict) -> dict:
+    companies = data.get("companies", [])
+    
+    inline_keyboard = [[{"text": c, "callback_data": c}] for c in companies]
+    
+    return {
+        "buttons": {
+            "inline_keyboard": inline_keyboard
+        }
+    }
