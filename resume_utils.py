@@ -196,7 +196,7 @@ def term_in_list(term, items):
 def find_gaps_and_update_master(extract, master_resume):
     """
     Compare extract.required_skills/keywords with master_resume skills/keywords (origin=True),
-    add missing terms to unconfirmed section of master_resume.
+    add missing terms to unconfirmed section of master_resume, unless present in explicitly_not_used.
     Return updated master_resume.
     """
     # Prepare sets of skill/keyword terms in master which are confirmed
@@ -213,7 +213,15 @@ def find_gaps_and_update_master(extract, master_resume):
     keywords = set(
         k["term"].lower()
         for k in master_resume.get("keywords", [])
-        if s.get("confirmed_by") and len(s["confirmed_by"]) > 0
+        if k.get("confirmed_by") and len(k["confirmed_by"]) > 0
+    )
+
+    # Explicitly not used terms
+    explicitly_not_used_skills = set(
+        s.lower() for s in master_resume.get("explicitly_not_used", {}).get("skills", [])
+    )
+    explicitly_not_used_keywords = set(
+        k.lower() for k in master_resume.get("explicitly_not_used", {}).get("keywords", [])
     )
 
     # Initialize unconfirmed if absent
@@ -233,12 +241,14 @@ def find_gaps_and_update_master(extract, master_resume):
         if term.lower() not in [k.lower() for k in master_resume["unconfirmed"]["keywords"]]:
             master_resume["unconfirmed"]["keywords"].append(term)
 
-    # Check skills (hard)
+    # Check skills (hard/soft)
     for skill_req in extract.get("required_skills", []):
         term = skill_req["term"]
         typ = skill_req.get("type", "hard")
         term_lower = term.lower()
-        # Determine if in master
+        # ПРОВЕРКА явно не использованных
+        if term_lower in explicitly_not_used_skills:
+            continue
         if typ == "hard":
             if term_lower not in hard_skills and not term_in_list(term, master_resume.get("skills", {}).get("hard_skills", [])):
                 add_unconfirmed_skill(term)
@@ -250,6 +260,8 @@ def find_gaps_and_update_master(extract, master_resume):
     for keyword_req in extract.get("required_keywords", []):
         term = keyword_req["term"]
         term_lower = term.lower()
+        if term_lower in explicitly_not_used_keywords:
+            continue
         if term_lower not in keywords and not term_in_list(term, master_resume.get("keywords", [])):
             add_unconfirmed_keyword(term)
 
