@@ -425,6 +425,16 @@ def filter_and_rank_bullets(master_resume, extract):
     adapted_master["skills"]["soft_skills"] = adapted_soft_skills
     adapted_master["keywords"] = adapted_keywords
 
+    # Добавляем desired_positions согласно логике
+    job_title = extract.get("job_title", "").strip()
+    derived_positions = extract.get("derived_positions", [])
+
+    if job_title:
+        adapted_master["desired_positions"] = [job_title]
+    elif derived_positions:
+        adapted_master["desired_positions"] = [derived_positions[0]]
+    # Иначе не меняем adapted_master["desired_positions"]
+
     return adapted_master
 
 
