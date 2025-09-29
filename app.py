@@ -45,7 +45,7 @@ async def find_gaps_endpoint(request: Request):
         raise HTTPException(status_code=400, detail="Missing 'extract' or 'master_resume' in request body")
 
     updated_master = find_gaps_and_update_master(extract, master_resume)
-    return JSONResponse(content={"updated_master_resume": updated_master})
+    return JSONResponse(content=updated_master)
 
 
 @app.post("/generate_adapted_resume")
