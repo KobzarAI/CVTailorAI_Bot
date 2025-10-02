@@ -182,21 +182,19 @@ def format_google_doc_content(input_data):
     return {'requests': requests}
 
 def term_in_list(term, items):
-    """Helper: check term presence in list of dicts by term and synonyms (case-insensitive)."""
+    """Helper: check term presence in list of dicts by term (case-insensitive)."""
     term_lower = term.lower()
     for item in items:
         if item["term"].lower() == term_lower:
             return True
-        for syn in item.get("synonyms", []):
-            if syn.lower() == term_lower:
-                return True
     return False
 
 
 def find_gaps_and_update_master(extract, master_resume):
     """
-    Compare extract.required_skills/keywords with master_resume skills/keywords (origin=True),
-    add missing terms to unconfirmed section of master_resume, unless present in explicitly_not_used.
+    Compare extract.required_skills/keywords with master_resume skills/keywords,
+    add missing terms to unconfirmed + proper sections (with empty confirmed_by),
+    unless present in explicitly_not_used.
     Return updated master_resume.
     """
     # Prepare sets of skill/keyword terms in master which are confirmed
@@ -232,37 +230,80 @@ def find_gaps_and_update_master(extract, master_resume):
     if "keywords" not in master_resume["unconfirmed"]:
         master_resume["unconfirmed"]["keywords"] = []
 
-    # Helper to add to unconfirmed without duplicates
-    def add_unconfirmed_skill(term):
+    # Ensure skills/keywords containers exist
+    if "skills" not in master_resume:
+        master_resume["skills"] = {"hard_skills": [], "soft_skills": []}
+    if "hard_skills" not in master_resume["skills"]:
+        master_resume["skills"]["hard_skills"] = []
+    if "soft_skills" not in master_resume["skills"]:
+        master_resume["skills"]["soft_skills"] = []
+    if "keywords" not in master_resume:
+        master_resume["keywords"] = []
+
+    # Helper to add to unconfirmed + master section without duplicates
+    def add_unconfirmed_skill(term, typ):
+        # add to unconfirmed
         if term.lower() not in [s.lower() for s in master_resume["unconfirmed"]["skills"]]:
             master_resume["unconfirmed"]["skills"].append(term)
 
+        # add skeleton to master_resume.skills
+        skill_list = master_resume["skills"]["hard_skills"] if typ == "hard" else master_resume["skills"]["soft_skills"]
+        if not term_in_list(term, skill_list):
+            skill_list.append({"term": term, "confirmed_by": []})
+
     def add_unconfirmed_keyword(term):
+        # add to unconfirmed
         if term.lower() not in [k.lower() for k in master_resume["unconfirmed"]["keywords"]]:
             master_resume["unconfirmed"]["keywords"].append(term)
 
-    # Check skills (hard/soft)
+        # add skeleton to master_resume.keywords
+        if not term_in_list(term, master_resume["keywords"]):
+            master_resume["keywords"].append({"term": term, "confirmed_by": []})
+
+    # Check skills (hard/soft) with synonyms from extract
     for skill_req in extract.get("required_skills", []):
         term = skill_req["term"]
+        synonyms = skill_req.get("synonyms", [])
         typ = skill_req.get("type", "hard")
-        term_lower = term.lower()
-        # ПРОВЕРКА явно не использованных
-        if term_lower in explicitly_not_used_skills:
-            continue
-        if typ == "hard":
-            if term_lower not in hard_skills and not term_in_list(term, master_resume.get("skills", {}).get("hard_skills", [])):
-                add_unconfirmed_skill(term)
-        elif typ == "soft":
-            if term_lower not in soft_skills and not term_in_list(term, master_resume.get("skills", {}).get("soft_skills", [])):
-                add_unconfirmed_skill(term)
 
-    # Check keywords
+        candidates = [term] + synonyms
+        candidates_lower = [c.lower() for c in candidates]
+
+        # Skip if any candidate is in explicitly_not_used
+        if any(c in explicitly_not_used_skills for c in candidates_lower):
+            continue
+
+        # Check confirmed sets + raw list in master
+        if typ == "hard":
+            already_present = any(
+                c in hard_skills or term_in_list(c, master_resume["skills"]["hard_skills"])
+                for c in candidates
+            )
+            if not already_present:
+                add_unconfirmed_skill(term, "hard")
+        elif typ == "soft":
+            already_present = any(
+                c in soft_skills or term_in_list(c, master_resume["skills"]["soft_skills"])
+                for c in candidates
+            )
+            if not already_present:
+                add_unconfirmed_skill(term, "soft")
+
+    # Check keywords with synonyms from extract
     for keyword_req in extract.get("required_keywords", []):
         term = keyword_req["term"]
-        term_lower = term.lower()
-        if term_lower in explicitly_not_used_keywords:
+        synonyms = keyword_req.get("synonyms", [])
+        candidates = [term] + synonyms
+        candidates_lower = [c.lower() for c in candidates]
+
+        if any(c in explicitly_not_used_keywords for c in candidates_lower):
             continue
-        if term_lower not in keywords and not term_in_list(term, master_resume.get("keywords", [])):
+
+        already_present = any(
+            c in keywords or term_in_list(c, master_resume["keywords"])
+            for c in candidates
+        )
+        if not already_present:
             add_unconfirmed_keyword(term)
 
     return master_resume
