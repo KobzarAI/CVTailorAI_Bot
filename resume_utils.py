@@ -514,3 +514,132 @@ def buttons(data: dict) -> dict:
     return {
         "inline_keyboard": inline_keyboard
     }
+
+def select_to_confirm_list(master_resume: dict) -> dict:
+    """
+    Собирает два списка из master_resume.json:
+    1. ToConfirm_list: skills/keywords без confirmed_by
+    2. Bullets: только id и text из experience[].bullets
+    """
+
+    to_confirm = []
+
+    # Hard skills
+    for skill in master_resume.get("skills", {}).get("hard_skills", []):
+        if not skill.get("confirmed_by"):
+            to_confirm.append({
+                "term": skill["term"],
+                "type": "skill:hard"
+            })
+
+    # Soft skills
+    for skill in master_resume.get("skills", {}).get("soft_skills", []):
+        if not skill.get("confirmed_by"):
+            to_confirm.append({
+                "term": skill["term"],
+                "type": "skill:soft"
+            })
+
+    # Keywords
+    for kw in master_resume.get("keywords", []):
+        if not kw.get("confirmed_by"):
+            to_confirm.append({
+                "term": kw["term"],
+                "type": "keyword"
+            })
+
+    # Собираем список bullets
+    bullets = []
+    for exp in master_resume.get("experience", []):
+        for bullet in exp.get("bullets", []):
+            bullets.append({
+                "id": bullet["id"],
+                "text": bullet["text"]
+            })
+
+    return {
+        "ToConfirm_list": to_confirm,
+        "Bullets": bullets
+    }
+
+def auto_confirm_terms(master_resume: dict, to_confirm_list: dict) -> dict:
+    """
+    Обновляет master_resume.json на основании ToConfirm_list с confirmed_by.
+
+    Шаги:
+    1. Проставляет confirmed_by в skills/keywords
+    2. Обновляет bullets[].skills_used / bullets[].keyword_used
+    3. Удаляет подтверждённые термины из unconfirmed
+    """
+
+    # Удобный индекс для буллетов
+    bullet_map = {
+        bullet["id"]: bullet
+        for exp in master_resume.get("experience", [])
+        for bullet in exp.get("bullets", [])
+    }
+
+    # Пройдемся по каждому элементу ToConfirm_list
+    for item in to_confirm_list.get("ToConfirm_list", []):
+        term = item["term"]
+        term_type = item["type"]
+        confirmed_by = item.get("confirmed_by", [])
+
+        # Обновляем confirmed_by в секции master_resume
+        target_section = None
+
+        if term_type.startswith("skill"):
+            # Проверяем сначала hard, потом soft
+            for skill in master_resume.get("skills", {}).get("hard_skills", []):
+                if skill["term"] == term:
+                    skill["confirmed_by"] = confirmed_by
+                    target_section = "skill"
+                    break
+            for skill in master_resume.get("skills", {}).get("soft_skills", []):
+                if skill["term"] == term:
+                    skill["confirmed_by"] = confirmed_by
+                    target_section = "skill"
+                    break
+
+        elif term_type == "keyword":
+            for kw in master_resume.get("keywords", []):
+                if kw["term"] == term:
+                    kw["confirmed_by"] = confirmed_by
+                    target_section = "keyword"
+                    break
+
+        # Если confirmed_by не пустой → вставляем в bullets
+        if confirmed_by:
+            for bullet_id in confirmed_by:
+                bullet = bullet_map.get(bullet_id)
+                if not bullet:
+                    continue
+
+                if target_section == "skill":
+                    if "skills_used" not in bullet:
+                        bullet["skills_used"] = []
+                    if term not in bullet["skills_used"]:
+                        bullet["skills_used"].append(term)
+
+                elif target_section == "keyword":
+                    if "keyword_used" not in bullet:
+                        bullet["keyword_used"] = []
+                    if term not in bullet["keyword_used"]:
+                        bullet["keyword_used"].append(term)
+
+    # Удаляем подтверждённые термины из unconfirmed
+    confirmed_terms = {
+        item["term"] for item in to_confirm_list.get("ToConfirm_list", [])
+        if item.get("confirmed_by")
+    }
+
+    master_resume["unconfirmed"]["skills"] = [
+        s for s in master_resume.get("unconfirmed", {}).get("skills", [])
+        if s not in confirmed_terms
+    ]
+    master_resume["unconfirmed"]["keywords"] = [
+        k for k in master_resume.get("unconfirmed", {}).get("keywords", [])
+        if k not in confirmed_terms
+    ]
+
+    return master_resume

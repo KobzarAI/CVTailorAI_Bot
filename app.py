@@ -12,7 +12,9 @@ from resume_utils import (
     gather_origin_terms,
     gather_all_current_terms,
     unconfirmed2terms,
-    buttons
+    buttons,
+    select_to_confirm_list,
+    auto_confirm_terms
 )
 
 app = FastAPI()
@@ -94,4 +96,32 @@ async def unconfirmed_to_terms_endpoint(request: Request):
 async def buttons_endpoint(request: Request):
     data = await request.json()
     result = buttons(data)
+    return JSONResponse(content=result)
+
+
+@app.post("/select_to_confirm_list")
+async def select_to_confirm_list_endpoint(request: Request):
+    data = await request.json()
+    result = select_to_confirm_list(data)
+    return JSONResponse(content=result)
+
+
+@app.post("/auto_confirm")
+async def auto_confirm_terms_endpoint(request: Request):
+    """
+    Эндпоинт принимает master_resume и ToConfirm_list,
+    возвращает обновленный master_resume.
+    """
+    data = await request.json()
+
+    master_resume = data.get("master_resume")
+    to_confirm_list = data.get("ToConfirm_list")
+
+    if not master_resume or not to_confirm_list:
+        return JSONResponse(
+            content={"error": "Both master_resume and ToConfirm_list must be provided"},
+            status_code=400
+        )
+
+    result = auto_confirm_terms(master_resume, {"ToConfirm_list": to_confirm_list})
     return JSONResponse(content=result)
