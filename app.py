@@ -14,7 +14,8 @@ from resume_utils import (
     unconfirmed2terms,
     buttons,
     select_to_confirm_list,
-    auto_confirm_terms
+    auto_confirm_terms,
+    remove_unconfirmed_and_unused_terms
 )
 
 app = FastAPI()
@@ -124,4 +125,21 @@ async def auto_confirm_terms_endpoint(request: Request):
         )
 
     result = auto_confirm_terms(master_resume, {"ToConfirm_list": to_confirm_list})
+    return JSONResponse(content=result)
+
+
+@app.post("/remove_duplicates")
+async def remove_unconfirmed_and_unused_endpoint(request: Request):
+    """
+    Expects JSON:
+    {
+        "duplicates": ["resume optimization", "stakeholder communication"],
+        "master_resume": { ... full JSON ... }
+    }
+    """
+    data = await request.json()
+    duplicates = data.get("duplicates", [])
+    master_resume = data.get("master_resume", {})
+
+    result = remove_duplicates(duplicates, master_resume)
     return JSONResponse(content=result)
