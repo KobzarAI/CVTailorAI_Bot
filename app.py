@@ -15,7 +15,8 @@ from resume_utils import (
     buttons,
     select_to_confirm_list,
     auto_confirm_terms,
-    remove_unconfirmed_and_unused_terms
+    remove_unconfirmed_and_unused_terms,
+    normalize_master_resume
 )
 
 app = FastAPI()
@@ -143,3 +144,27 @@ async def remove_unconfirmed_and_unused_endpoint(request: Request):
 
     result = remove_duplicates(duplicates, master_resume)
     return JSONResponse(content=result)
+
+@app.post("/normalize_master")
+async def normalize_master_resume_endpoint(request: Request):
+    """
+    Вебхук для нормализации master_resume.json:
+    - восстанавливает unconfirmed.skills и unconfirmed.keywords
+    - синхронизирует confirmed_by с буллетами
+    """
+    try:
+        # Получаем JSON из запроса
+        data = await request.json()
+
+        # Обрабатываем
+        result = normalize_master_resume(data)
+
+        # Возвращаем обновлённый JSON
+        return JSONResponse(content=result)
+
+    except Exception as e:
+        # На случай ошибок возвращаем их в ответе
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )

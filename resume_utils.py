@@ -693,3 +693,80 @@ def remove_unconfirmed_and_unused_terms(duplicates: list[str], master_resume: di
         ]
 
     return cleaned
+
+def normalize_master_resume(master_resume: dict) -> dict:
+    """
+    Приводит master_resume.json в консистентное состояние:
+    1. Восстанавливает секцию unconfirmed.skills и unconfirmed.keywords
+       на основе hard_skills, soft_skills и keywords с пустым confirmed_by.
+    2. Гарантирует, что все skills/keywords с confirmed_by действительно
+       перечислены в соответствующих буллетах.
+    """
+    # --- Шаг 0: подготовка удобных ссылок ---
+    hard_skills = master_resume.get("skills", {}).get("hard_skills", [])
+    soft_skills = master_resume.get("skills", {}).get("soft_skills", [])
+    keywords = master_resume.get("keywords", [])
+    experience = master_resume.get("experience", [])
+    unconfirmed = master_resume.get("unconfirmed", {})
+    unconfirmed_skills = set(unconfirmed.get("skills", []))
+    unconfirmed_keywords = set(unconfirmed.get("keywords", []))
+
+    # --- Шаг 1: восстановление unconfirmed ---
+    # Hard skills
+    for skill in hard_skills:
+        if not skill.get("confirmed_by"):
+            unconfirmed_skills.add(skill["term"])
+
+    # Soft skills
+    for skill in soft_skills:
+        if not skill.get("confirmed_by"):
+            unconfirmed_skills.add(skill["term"])
+
+    # Keywords
+    for kw in keywords:
+        if not kw.get("confirmed_by"):
+            unconfirmed_keywords.add(kw["term"])
+
+    # Обновляем секцию unconfirmed
+    master_resume["unconfirmed"] = {
+        "skills": sorted(unconfirmed_skills),
+        "keywords": sorted(unconfirmed_keywords)
+    }
+
+    # --- Шаг 2: синхронизация confirmed_by с буллетами ---
+    # Создаем удобный индекс буллетов по id
+    bullet_index = {}
+    for exp in experience:
+        for bullet in exp.get("bullets", []):
+            bullet_index[bullet["id"]] = bullet
+
+    # Функция добавления термина в список, если его нет
+    def ensure_in_list(lst: list, term: str):
+        if term not in lst:
+            lst.append(term)
+
+    # Проверяем hard skills
+    for skill in hard_skills:
+        term = skill["term"]
+        for bullet_id in skill.get("confirmed_by", []):
+            bullet = bullet_index.get(bullet_id)
+            if bullet is not None:
+                ensure_in_list(bullet.setdefault("skills_used", []), term)
+
+    # Проверяем soft skills
+    for skill in soft_skills:
+        term = skill["term"]
+        for bullet_id in skill.get("confirmed_by", []):
+            bullet = bullet_index.get(bullet_id)
+            if bullet is not None:
+                ensure_in_list(bullet.setdefault("skills_used", []), term)
+
+    # Проверяем keywords
+    for kw in keywords:
+        term = kw["term"]
+        for bullet_id in kw.get("confirmed_by", []):
+            bullet = bullet_index.get(bullet_id)
+            if bullet is not None:
+                ensure_in_list(bullet.setdefault("keyword_used", []), term)
+
+    return master_resume
