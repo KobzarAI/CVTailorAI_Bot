@@ -142,7 +142,7 @@ async def remove_unconfirmed_and_unused_endpoint(request: Request):
     duplicates = data.get("duplicates", [])
     master_resume = data.get("master_resume", {})
 
-    result = remove_duplicates(duplicates, master_resume)
+    result = remove_unconfirmed_and_unused_terms(duplicates, master_resume)
     return JSONResponse(content=result)
 
 @app.post("/normalize_master")
