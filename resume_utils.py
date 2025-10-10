@@ -701,6 +701,7 @@ def normalize_master_resume(master_resume: dict) -> dict:
        на основе hard_skills, soft_skills и keywords с пустым confirmed_by.
     2. Гарантирует, что все skills/keywords с confirmed_by действительно
        перечислены в соответствующих буллетах.
+    3. Дополняет ссылки https:// если нужно. Чтобы в пдф они были кликабельными
     """
     # --- Шаг 0: подготовка удобных ссылок ---
     hard_skills = master_resume.get("skills", {}).get("hard_skills", [])
@@ -710,6 +711,28 @@ def normalize_master_resume(master_resume: dict) -> dict:
     unconfirmed = master_resume.get("unconfirmed", {})
     unconfirmed_skills = set(unconfirmed.get("skills", []))
     unconfirmed_keywords = set(unconfirmed.get("keywords", []))
+
+    # --- Шаг 0.1: дополнение ссылок ---
+    # Извлекаем значения
+    l_linkedin = master_resume.get("personal_info", {}).get("linkedin", "")
+    l_portfolio = master_resume.get("personal_info", {}).get("portfolio", "")
+
+    # Проверяем и дополняем при необходимости
+    def add_https_if_missing(url: str) -> str:
+        url = url.strip()
+        if url and not url.startswith("http://") and not url.startswith("https://"):
+            url = "https://" + url
+        return url
+
+    l_linkedin = add_https_if_missing(l_linkedin)
+    l_portfolio = add_https_if_missing(l_portfolio)
+
+    # Перезаписываем в master_resume
+    if "personal_info" not in master_resume:
+        master_resume["personal_info"] = {}
+
+    master_resume["personal_info"]["linkedin"] = l_linkedin
+    master_resume["personal_info"]["portfolio"] = l_portfolio
 
     # --- Шаг 1: восстановление unconfirmed ---
     # Hard skills
