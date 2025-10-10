@@ -654,6 +654,8 @@ def remove_unconfirmed_and_unused_terms(duplicates: list[str], master_resume: di
       - skills.soft_skills (if confirmed_by is empty)
       - keywords (if confirmed_by is empty)
     """
+    # Подготовка множества дубликатов в нижнем регистре
+    duplicates_lower = {d.lower() for d in duplicates}
 
     cleaned = master_resume.copy()
 
@@ -661,35 +663,35 @@ def remove_unconfirmed_and_unused_terms(duplicates: list[str], master_resume: di
     if "unconfirmed" in cleaned and "skills" in cleaned["unconfirmed"]:
         cleaned["unconfirmed"]["skills"] = [
             skill for skill in cleaned["unconfirmed"]["skills"]
-            if skill not in duplicates
+            if skill.lower() not in duplicates_lower
         ]
 
     # Очистка unconfirmed.keywords (список строк)
     if "unconfirmed" in cleaned and "keywords" in cleaned["unconfirmed"]:
         cleaned["unconfirmed"]["keywords"] = [
             kw for kw in cleaned["unconfirmed"]["keywords"]
-            if kw not in duplicates
+            if kw.lower() not in duplicates_lower
         ]
 
     # Очистка skills.hard_skills
     if "skills" in cleaned and "hard_skills" in cleaned["skills"]:
         cleaned["skills"]["hard_skills"] = [
             obj for obj in cleaned["skills"]["hard_skills"]
-            if not (obj.get("term") in duplicates and obj.get("confirmed_by") == [])
+            if not (obj.get("term", "").lower() in duplicates_lower and obj.get("confirmed_by") == [])
         ]
 
     # Очистка skills.soft_skills
     if "skills" in cleaned and "soft_skills" in cleaned["skills"]:
         cleaned["skills"]["soft_skills"] = [
             obj for obj in cleaned["skills"]["soft_skills"]
-            if not (obj.get("term") in duplicates and obj.get("confirmed_by") == [])
+            if not (obj.get("term", "").lower() in duplicates_lower and obj.get("confirmed_by") == [])
         ]
 
     # Очистка keywords
     if "keywords" in cleaned:
         cleaned["keywords"] = [
             obj for obj in cleaned["keywords"]
-            if not (obj.get("term") in duplicates and obj.get("confirmed_by") == [])
+            if not (obj.get("term", "").lower() in duplicates_lower and obj.get("confirmed_by") == [])
         ]
 
     return cleaned
