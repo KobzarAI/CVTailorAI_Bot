@@ -699,11 +699,13 @@ def remove_unconfirmed_and_unused_terms(duplicates: list[str], master_resume: di
 def normalize_master_resume(master_resume: dict) -> dict:
     """
     Приводит master_resume.json в консистентное состояние:
+    0. Дополняет ссылки https:// если нужно. Чтобы в пдф они были кликабельными
     1. Восстанавливает секцию unconfirmed.skills и unconfirmed.keywords
        на основе hard_skills, soft_skills и keywords с пустым confirmed_by.
     2. Гарантирует, что все skills/keywords с confirmed_by действительно
        перечислены в соответствующих буллетах.
-    3. Дополняет ссылки https:// если нужно. Чтобы в пдф они были кликабельными
+    3. Проверяет обратную связь — что все термины, перечисленные в буллетах,
+       упомянуты в confirmed_by в секции skills/keywords.
     """
     # --- Шаг 0: подготовка удобных ссылок ---
     hard_skills = master_resume.get("skills", {}).get("hard_skills", [])
@@ -715,21 +717,15 @@ def normalize_master_resume(master_resume: dict) -> dict:
     unconfirmed_keywords = set(unconfirmed.get("keywords", []))
 
     # --- Шаг 0.1: дополнение ссылок ---
-    # Извлекаем значения
-    l_linkedin = master_resume.get("personal_info", {}).get("linkedin", "")
-    l_portfolio = master_resume.get("personal_info", {}).get("portfolio", "")
-
-    # Проверяем и дополняем при необходимости
     def add_https_if_missing(url: str) -> str:
         url = url.strip()
         if url and not url.startswith("http://") and not url.startswith("https://"):
             url = "https://" + url
         return url
 
-    l_linkedin = add_https_if_missing(l_linkedin)
-    l_portfolio = add_https_if_missing(l_portfolio)
+    l_linkedin = add_https_if_missing(master_resume.get("personal_info", {}).get("linkedin", ""))
+    l_portfolio = add_https_if_missing(master_resume.get("personal_info", {}).get("portfolio", ""))
 
-    # Перезаписываем в master_resume
     if "personal_info" not in master_resume:
         master_resume["personal_info"] = {}
 
@@ -737,40 +733,33 @@ def normalize_master_resume(master_resume: dict) -> dict:
     master_resume["personal_info"]["portfolio"] = l_portfolio
 
     # --- Шаг 1: восстановление unconfirmed ---
-    # Hard skills
     for skill in hard_skills:
         if not skill.get("confirmed_by"):
             unconfirmed_skills.add(skill["term"])
 
-    # Soft skills
     for skill in soft_skills:
         if not skill.get("confirmed_by"):
             unconfirmed_skills.add(skill["term"])
 
-    # Keywords
     for kw in keywords:
         if not kw.get("confirmed_by"):
             unconfirmed_keywords.add(kw["term"])
 
-    # Обновляем секцию unconfirmed
     master_resume["unconfirmed"] = {
         "skills": sorted(unconfirmed_skills),
         "keywords": sorted(unconfirmed_keywords)
     }
 
     # --- Шаг 2: синхронизация confirmed_by с буллетами ---
-    # Создаем удобный индекс буллетов по id
     bullet_index = {}
     for exp in experience:
         for bullet in exp.get("bullets", []):
             bullet_index[bullet["id"]] = bullet
 
-    # Функция добавления термина в список, если его нет
     def ensure_in_list(lst: list, term: str):
         if term not in lst:
             lst.append(term)
 
-    # Проверяем hard skills
     for skill in hard_skills:
         term = skill["term"]
         for bullet_id in skill.get("confirmed_by", []):
@@ -778,7 +767,6 @@ def normalize_master_resume(master_resume: dict) -> dict:
             if bullet is not None:
                 ensure_in_list(bullet.setdefault("skills_used", []), term)
 
-    # Проверяем soft skills
     for skill in soft_skills:
         term = skill["term"]
         for bullet_id in skill.get("confirmed_by", []):
@@ -786,12 +774,30 @@ def normalize_master_resume(master_resume: dict) -> dict:
             if bullet is not None:
                 ensure_in_list(bullet.setdefault("skills_used", []), term)
 
-    # Проверяем keywords
     for kw in keywords:
         term = kw["term"]
         for bullet_id in kw.get("confirmed_by", []):
             bullet = bullet_index.get(bullet_id)
             if bullet is not None:
                 ensure_in_list(bullet.setdefault("keyword_used", []), term)
+
+    # --- Шаг 3: обратная проверка — добавляем missing confirmed_by ---
+    # Создаём быстрый поиск термина в соответствующих секциях
+    hard_skill_map = {s["term"]: s for s in hard_skills}
+    soft_skill_map = {s["term"]: s for s in soft_skills}
+    keyword_map = {k["term"]: k for k in keywords}
+
+    for bullet_id, bullet in bullet_index.items():
+        for term in bullet.get("skills_used", []):
+            # hard skills
+            if term in hard_skill_map:
+                ensure_in_list(hard_skill_map[term].setdefault("confirmed_by", []), bullet_id)
+            # soft skills
+            elif term in soft_skill_map:
+                ensure_in_list(soft_skill_map[term].setdefault("confirmed_by", []), bullet_id)
+
+        for term in bullet.get("keyword_used", []):
+            if term in keyword_map:
+                ensure_in_list(keyword_map[term].setdefault("confirmed_by", []), bullet_id)
 
     return master_resume
