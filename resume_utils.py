@@ -814,3 +814,139 @@ def normalize_master_resume(master_resume: dict) -> dict:
                 ensure_in_list(keyword_map[term].setdefault("confirmed_by", []), bullet_id)
 
     return master_resume
+
+def cv2text(master_resume: dict) -> str:
+    """
+    Формирует текстовую версию резюме с разметкой вида <h1>, <b1> и т.п.
+    для последующего преобразования в формат документа.
+    Если end_date пустой — подставляется 'now'.
+    """
+
+    #Скелет примерно такой    
+    #<h1>FullName
+    #<l1>DesiredPosition
+    #<l2>Location|email|LinkedIn|Portfolio
+    #<h2>Key skills & Competencies
+    #<b3>HardSkills
+    #<b2>Language1 (Proficiency1), Language2 (Proficiency2)
+    #<h2>Work history
+    #<h3>Company _name - Job title
+    #<h4>Jan 2020 - May 2021 | London
+    #<b1>Bullet text
+    #<h2>Education
+    #<b2>Degree - Institution
+    #<b2>Certification_name
+
+    # --- Блок Personal Info ---
+    personal_info = master_resume.get("personal_info", {})
+    full_name = personal_info.get("full_name", "").strip()
+    email = personal_info.get("email", "").strip()
+    location = personal_info.get("location", "").strip()
+    linkedin = personal_info.get("linkedin", "").strip()
+    portfolio = personal_info.get("portfolio", "").strip()
+
+    desired_positions = master_resume.get("desired_positions", [])
+    desired_position = desired_positions[0] if desired_positions else ""
+
+    contact_parts = [p for p in [location, email, linkedin, portfolio] if p]
+    contact_line = " | ".join(contact_parts)
+
+    lines = []
+
+    # Заголовок
+    if full_name:
+        lines.append(f"<h1>{full_name}")
+    if desired_position:
+        lines.append(f"<l1>{desired_position}")
+    if contact_line:
+        lines.append(f"<l2>{contact_line}")
+
+    # --- Блок Key Skills & Competencies ---
+    hard_skills = master_resume.get("skills", {}).get("hard_skills", [])
+    soft_skills = master_resume.get("skills", {}).get("soft_skills", [])
+    keywords = master_resume.get("keywords", [])
+    languages = master_resume.get("languages", [])
+
+    all_skill_terms = [s["term"] for s in (hard_skills + soft_skills + keywords) if s.get("term")]
+    if all_skill_terms or languages:
+        lines.append(f"\n<h2>Key skills & Competencies")
+
+    if all_skill_terms:
+        lines.append(f"<b3>{', '.join(all_skill_terms)}")
+
+    if languages:
+        lang_parts = []
+        for lang in languages:
+            language = lang.get("language", "").strip()
+            proficiency = lang.get("proficiency", "").strip()
+            if not language:
+                continue
+            if proficiency:
+                lang_parts.append(f"{language} ({proficiency})")
+            else:
+                lang_parts.append(f"{language}")
+        if lang_parts:  # ничего не писать, если языков реально нет
+            lines.append(f"<b2>{', '.join(lang_parts)}")
+
+    # --- Блок Work History ---
+    experience = master_resume.get("experience", [])
+    if experience:
+        lines.append(f"\n<h2>Work history")
+
+    for exp in experience:
+        company = exp.get("company", "").strip()
+        job_title = exp.get("job_title", "").strip()
+        location = exp.get("location", "").strip()
+        start_date = exp.get("start_date", "").strip()
+        end_date = exp.get("end_date", "").strip() or "now"
+        bullets = exp.get("bullets", [])
+
+        # Заголовок компании и должности
+        if company and job_title:
+            lines.append(f"<h3>{company} - {job_title}")
+        elif company:
+            lines.append(f"<h3>{company}")
+        elif job_title:
+            lines.append(f"<h3>{job_title}")
+
+        # Даты и локация
+        date_part = f"{start_date} - {end_date}".strip()
+        if location:
+            timeline = f"{date_part} | {location}"
+        else:
+            timeline = date_part
+
+        if timeline:
+            lines.append(f"<h4>{timeline}")
+
+        # Буллеты
+        for bullet in bullets:
+            text = bullet.get("text", "").strip()
+            if text:
+                lines.append(f"<b1>{text}")
+
+        # Пустая строка после каждой компании (для читаемости)
+        lines.append("")
+
+    # --- Блок Education ---
+    education = master_resume.get("education", [])
+    certifications = master_resume.get("certifications", [])
+
+    if education or certifications:
+        lines.append(f"\n<h2>Education")
+
+    for edu in education:
+        degree = edu.get("degree", "").strip()
+        institution = edu.get("institution", "").strip()
+        if degree or institution:
+            if degree and institution:
+                lines.append(f"<b2>{degree} - {institution}")
+            else:
+                lines.append(f"<b2>{degree or institution}")
+
+    for cert in certifications:
+        name = cert.get("name", "").strip()
+        if name:
+            lines.append(f"<b2>{name}")
+
+    return "\n".join(line for line in lines if line.strip())

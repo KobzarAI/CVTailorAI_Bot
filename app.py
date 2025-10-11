@@ -16,7 +16,8 @@ from resume_utils import (
     select_to_confirm_list,
     auto_confirm_terms,
     remove_unconfirmed_and_unused_terms,
-    normalize_master_resume
+    normalize_master_resume,
+    cv2text
 )
 
 app = FastAPI()
@@ -145,6 +146,7 @@ async def remove_unconfirmed_and_unused_endpoint(request: Request):
     result = remove_unconfirmed_and_unused_terms(duplicates, master_resume)
     return JSONResponse(content=result)
 
+
 @app.post("/normalize_master")
 async def normalize_master_resume_endpoint(request: Request):
     """
@@ -168,3 +170,17 @@ async def normalize_master_resume_endpoint(request: Request):
             status_code=500,
             content={"error": str(e)}
         )
+
+
+@app.post("/cv_to_text")
+async def cv_to_text(request: Request):
+    """
+    Принимает JSON с master_resume,
+    возвращает текстовую разметку для Google Docs.
+    """
+    try:
+        data = await request.json()
+        formatted_text = cv2text(data)
+        return JSONResponse(content={"text": formatted_text})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=400)
