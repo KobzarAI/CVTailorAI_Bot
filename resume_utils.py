@@ -703,7 +703,7 @@ def normalize_master_resume(master_resume: dict) -> dict:
     1. Восстанавливает секцию unconfirmed.skills и unconfirmed.keywords
        на основе hard_skills, soft_skills и keywords с пустым confirmed_by.
     2. Гарантирует, что все skills/keywords с confirmed_by действительно
-       перечислены в соответствующих буллетах.
+       перечислены в соответствующих буллетах. И подчищает мусорные=несуществующие ID
     3. Проверяет обратную связь — что все термины, перечисленные в буллетах,
        упомянуты в confirmed_by в секции skills/keywords.
     """
@@ -761,25 +761,38 @@ def normalize_master_resume(master_resume: dict) -> dict:
             lst.append(term)
 
     for skill in hard_skills:
-        term = skill["term"]
-        for bullet_id in skill.get("confirmed_by", []):
-            bullet = bullet_index.get(bullet_id)
-            if bullet is not None:
-                ensure_in_list(bullet.setdefault("skills_used", []), term)
+    term = skill["term"]
+    confirmed_ids = skill.get("confirmed_by", [])
+    valid_ids = []
+    for bullet_id in confirmed_ids:
+        bullet = bullet_index.get(bullet_id)
+        if bullet is not None:
+            ensure_in_list(bullet.setdefault("skills_used", []), term)
+            valid_ids.append(bullet_id)
+        # else: пропускаем — тем самым выбрасываем битый ID
+    skill["confirmed_by"] = valid_ids
 
     for skill in soft_skills:
-        term = skill["term"]
-        for bullet_id in skill.get("confirmed_by", []):
-            bullet = bullet_index.get(bullet_id)
-            if bullet is not None:
-                ensure_in_list(bullet.setdefault("skills_used", []), term)
+    term = skill["term"]
+    confirmed_ids = skill.get("confirmed_by", [])
+    valid_ids = []
+    for bullet_id in confirmed_ids:
+        bullet = bullet_index.get(bullet_id)
+        if bullet is not None:
+            ensure_in_list(bullet.setdefault("skills_used", []), term)
+            valid_ids.append(bullet_id)
+    skill["confirmed_by"] = valid_ids
 
     for kw in keywords:
-        term = kw["term"]
-        for bullet_id in kw.get("confirmed_by", []):
-            bullet = bullet_index.get(bullet_id)
-            if bullet is not None:
-                ensure_in_list(bullet.setdefault("keyword_used", []), term)
+    term = kw["term"]
+    confirmed_ids = kw.get("confirmed_by", [])
+    valid_ids = []
+    for bullet_id in confirmed_ids:
+        bullet = bullet_index.get(bullet_id)
+        if bullet is not None:
+            ensure_in_list(bullet.setdefault("keyword_used", []), term)
+            valid_ids.append(bullet_id)
+    kw["confirmed_by"] = valid_ids
 
     # --- Шаг 3: обратная проверка — добавляем missing confirmed_by ---
     # Создаём быстрый поиск термина в соответствующих секциях
