@@ -68,9 +68,9 @@ def format_google_doc_content(input_data):
         '<h4>': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': None},
         '<b1>': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': 'BULLET_DISC_CIRCLE_SQUARE'},
         '<b2>': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': None, 'indentFirstLine': {'magnitude': 21.259842519685044, 'unit': 'PT'}, 'indentStart': {'magnitude': 21.259842519685044, 'unit': 'PT'}},
-        '<b3>': {'fontSize': 12, 'bold': True,  'alignment': 'START',  'list': None},
-        '<l1>': {'fontSize': 9, 'bold': False,  'alignment': 'CENTER', 'list': None},
-        '<l2>': {'fontSize': 8, 'bold': False,  'alignment': 'CENTER', 'list': None}
+        '<b3>': {'fontSize': 8,  'bold': True,  'alignment': 'START',  'list': None},
+        '<l1>': {'fontSize': 9,  'bold': False, 'alignment': 'CENTER', 'list': None},
+        '<l2>': {'fontSize': 8,  'bold': False, 'alignment': 'CENTER', 'list': None}
     }
 
     content = input_data.get('content', [])
