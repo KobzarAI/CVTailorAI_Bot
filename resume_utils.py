@@ -62,12 +62,15 @@ def format_google_doc_content(input_data):
     Корректно учитывает индексные сдвиги для каждого удаления.
     """
     styles = {
-        '<h1>': {'fontSize': 16, 'bold': True,  'alignment': 'START', 'list': None},
-        '<h2>': {'fontSize': 12, 'bold': True,  'alignment': 'START', 'list': None},
-        '<h3>': {'fontSize': 11, 'bold': False, 'alignment': 'START', 'list': None},
-        '<h4>': {'fontSize': 8,  'bold': False, 'alignment': 'START', 'list': None},
-        '<b1>': {'fontSize': 8,  'bold': False, 'alignment': 'START', 'list': 'BULLET_DISC_CIRCLE_SQUARE'},
-        '<b2>': {'fontSize': 8,  'bold': False, 'alignment': 'START', 'list': None, 'indentFirstLine': {'magnitude': 21.259842519685044, 'unit': 'PT'}, 'indentStart': {'magnitude': 21.259842519685044, 'unit': 'PT'}}
+        '<h1>': {'fontSize': 17, 'bold': False, 'alignment': 'CENTER', 'list': None},
+        '<h2>': {'fontSize': 12, 'bold': True,  'alignment': 'START',  'list': None},
+        '<h3>': {'fontSize': 11, 'bold': False, 'alignment': 'START',  'list': None},
+        '<h4>': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': None},
+        '<b1>': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': 'BULLET_DISC_CIRCLE_SQUARE'},
+        '<b2>': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': None, 'indentFirstLine': {'magnitude': 21.259842519685044, 'unit': 'PT'}, 'indentStart': {'magnitude': 21.259842519685044, 'unit': 'PT'}},
+        '<b3>': {'fontSize': 12, 'bold': True,  'alignment': 'START',  'list': None},
+        '<l1>': {'fontSize': 9, 'bold': False,  'alignment': 'CENTER', 'list': None},
+        '<l2>': {'fontSize': 8, 'bold': False,  'alignment': 'CENTER', 'list': None}
     }
 
     content = input_data.get('content', [])
