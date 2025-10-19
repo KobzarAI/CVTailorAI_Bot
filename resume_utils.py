@@ -908,7 +908,7 @@ def cv2text(master_resume: dict) -> str:
 
     all_skill_terms = [s["term"] for s in (hard_skills + soft_skills + keywords) if s.get("term")]
     if all_skill_terms or languages:
-        lines.append(f"<br/>[[h2]]Key skills & Competencies")
+        lines.append(f"\n[[h2]]Key skills & Competencies")
 
     if all_skill_terms:
         lines.append(f"[[b3]]{', '.join(all_skill_terms)}")
@@ -930,7 +930,7 @@ def cv2text(master_resume: dict) -> str:
     # --- Блок Work History ---
     experience = master_resume.get("experience", [])
     if experience:
-        lines.append(f"<br/>[[h2]]Work history")
+        lines.append(f"\n[[h2]]Work history")
 
     for exp in experience:
         company = exp.get("company", "").strip()
@@ -972,7 +972,7 @@ def cv2text(master_resume: dict) -> str:
     certifications = master_resume.get("certifications", [])
 
     if education or certifications:
-        lines.append(f"<br/>[[h2]]Education")
+        lines.append(f"\n[[h2]]Education")
 
     for edu in education:
         degree = edu.get("degree", "").strip()
@@ -988,4 +988,4 @@ def cv2text(master_resume: dict) -> str:
         if name:
             lines.append(f"[[b2]]{name}")
 
-    return "<br/>".join(line for line in lines if line.strip())
+    return "\n".join(line for line in lines if line.strip())
