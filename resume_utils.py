@@ -62,15 +62,15 @@ def format_google_doc_content(input_data):
     Корректно учитывает индексные сдвиги для каждого удаления.
     """
     styles = {
-        '<h1>': {'fontSize': 17, 'bold': False, 'alignment': 'CENTER', 'list': None},
-        '<h2>': {'fontSize': 12, 'bold': True,  'alignment': 'START',  'list': None},
-        '<h3>': {'fontSize': 11, 'bold': False, 'alignment': 'START',  'list': None},
-        '<h4>': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': None},
-        '<b1>': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': 'BULLET_DISC_CIRCLE_SQUARE'},
-        '<b2>': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': None, 'indentFirstLine': {'magnitude': 21.259842519685044, 'unit': 'PT'}, 'indentStart': {'magnitude': 21.259842519685044, 'unit': 'PT'}},
-        '<b3>': {'fontSize': 8,  'bold': True,  'alignment': 'START',  'list': None},
-        '<l1>': {'fontSize': 9,  'bold': False, 'alignment': 'CENTER', 'list': None},
-        '<l2>': {'fontSize': 8,  'bold': False, 'alignment': 'CENTER', 'list': None}
+        '[[h1]]': {'fontSize': 17, 'bold': False, 'alignment': 'CENTER', 'list': None},
+        '[[h2]]': {'fontSize': 12, 'bold': True,  'alignment': 'START',  'list': None},
+        '[[h3]]': {'fontSize': 11, 'bold': False, 'alignment': 'START',  'list': None},
+        '[[h4]]': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': None},
+        '[[b1]]': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': 'BULLET_DISC_CIRCLE_SQUARE'},
+        '[[b2]]': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': None, 'indentFirstLine': {'magnitude': 21.259842519685044, 'unit': 'PT'}, 'indentStart': {'magnitude': 21.259842519685044, 'unit': 'PT'}},
+        '[[b3]]': {'fontSize': 8,  'bold': True,  'alignment': 'START',  'list': None},
+        '[[l1]]': {'fontSize': 9,  'bold': False, 'alignment': 'CENTER', 'list': None},
+        '[[l2]]': {'fontSize': 8,  'bold': False, 'alignment': 'CENTER', 'list': None}
     }
 
     content = input_data.get('content', [])
@@ -856,25 +856,25 @@ def normalize_master_resume(master_resume: dict) -> dict:
 
 def cv2text(master_resume: dict) -> str:
     """
-    Формирует текстовую версию резюме с разметкой вида <h1>, <b1> и т.п.
+    Формирует текстовую версию резюме с разметкой вида [[h1]], [[b1]] и т.п.
     для последующего преобразования в формат документа.
     Если end_date пустой — подставляется 'now'.
     """
 
-    #Скелет примерно такой    
-    #<h1>FullName
-    #<l1>DesiredPosition
-    #<l2>Location|email|LinkedIn|Portfolio
-    #<h2>Key skills & Competencies
-    #<b3>HardSkills
-    #<b2>Language1 (Proficiency1), Language2 (Proficiency2)
-    #<h2>Work history
-    #<h3>Company _name - Job title
-    #<h4>Jan 2020 - May 2021 | London
-    #<b1>Bullet text
-    #<h2>Education
-    #<b2>Degree - Institution
-    #<b2>Certification_name
+    #Скелет примерно такой. Были теги <h1> - но гуглдок съедает разметку пришлось делать неузнаваемую [[h1]]   
+    #[[h1]]FullName
+    #[[l1]]DesiredPosition
+    #[[l2]]Location|email|LinkedIn|Portfolio
+    #[[h2]]Key skills & Competencies
+    #[[b3]]HardSkills
+    #[[b2]]Language1 (Proficiency1), Language2 (Proficiency2)
+    #[[h2]]Work history
+    #[[h3]]Company _name - Job title
+    #[[h4]]Jan 2020 - May 2021 | London
+    #[[b1]]Bullet text
+    #[[h2]]Education
+    #[[b2]]Degree - Institution
+    #[[b2]]Certification_name
 
     # --- Блок Personal Info ---
     personal_info = master_resume.get("personal_info", {})
@@ -894,11 +894,11 @@ def cv2text(master_resume: dict) -> str:
 
     # Заголовок
     if full_name:
-        lines.append(f"<h1>{full_name}")
+        lines.append(f"[[h1]]{full_name}")
     if desired_position:
-        lines.append(f"<l1>{desired_position}")
+        lines.append(f"[[l1]]{desired_position}")
     if contact_line:
-        lines.append(f"<l2>{contact_line}")
+        lines.append(f"[[l2]]{contact_line}")
 
     # --- Блок Key Skills & Competencies ---
     hard_skills = master_resume.get("skills", {}).get("hard_skills", [])
@@ -908,10 +908,10 @@ def cv2text(master_resume: dict) -> str:
 
     all_skill_terms = [s["term"] for s in (hard_skills + soft_skills + keywords) if s.get("term")]
     if all_skill_terms or languages:
-        lines.append(f"\n<h2>Key skills & Competencies")
+        lines.append(f"<br/>[[h2]]Key skills & Competencies")
 
     if all_skill_terms:
-        lines.append(f"<b3>{', '.join(all_skill_terms)}")
+        lines.append(f"[[b3]]{', '.join(all_skill_terms)}")
 
     if languages:
         lang_parts = []
@@ -925,12 +925,12 @@ def cv2text(master_resume: dict) -> str:
             else:
                 lang_parts.append(f"{language}")
         if lang_parts:  # ничего не писать, если языков реально нет
-            lines.append(f"<b2>{', '.join(lang_parts)}")
+            lines.append(f"[[b2]]{', '.join(lang_parts)}")
 
     # --- Блок Work History ---
     experience = master_resume.get("experience", [])
     if experience:
-        lines.append(f"\n<h2>Work history")
+        lines.append(f"<br/>[[h2]]Work history")
 
     for exp in experience:
         company = exp.get("company", "").strip()
@@ -942,11 +942,11 @@ def cv2text(master_resume: dict) -> str:
 
         # Заголовок компании и должности
         if company and job_title:
-            lines.append(f"<h3>{company} - {job_title}")
+            lines.append(f"[[h3]]{company} - {job_title}")
         elif company:
-            lines.append(f"<h3>{company}")
+            lines.append(f"[[h3]]{company}")
         elif job_title:
-            lines.append(f"<h3>{job_title}")
+            lines.append(f"[[h3]]{job_title}")
 
         # Даты и локация
         date_part = f"{start_date} - {end_date}".strip()
@@ -956,13 +956,13 @@ def cv2text(master_resume: dict) -> str:
             timeline = date_part
 
         if timeline:
-            lines.append(f"<h4>{timeline}")
+            lines.append(f"[[h4]]{timeline}")
 
         # Буллеты
         for bullet in bullets:
             text = bullet.get("text", "").strip()
             if text:
-                lines.append(f"<b1>{text}")
+                lines.append(f"[[b1]]{text}")
 
         # Пустая строка после каждой компании (для читаемости)
         lines.append("")
@@ -972,20 +972,20 @@ def cv2text(master_resume: dict) -> str:
     certifications = master_resume.get("certifications", [])
 
     if education or certifications:
-        lines.append(f"\n<h2>Education")
+        lines.append(f"<br/>[[h2]]Education")
 
     for edu in education:
         degree = edu.get("degree", "").strip()
         institution = edu.get("institution", "").strip()
         if degree or institution:
             if degree and institution:
-                lines.append(f"<b2>{degree} - {institution}")
+                lines.append(f"[[b2]]{degree} - {institution}")
             else:
-                lines.append(f"<b2>{degree or institution}")
+                lines.append(f"[[b2]]{degree or institution}")
 
     for cert in certifications:
         name = cert.get("name", "").strip()
         if name:
-            lines.append(f"<b2>{name}")
+            lines.append(f"[[b2]]{name}")
 
-    return "\n".join(line for line in lines if line.strip())
+    return "<br/>".join(line for line in lines if line.strip())
