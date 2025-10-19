@@ -378,7 +378,8 @@ def filter_and_rank_bullets(master_resume, extract):
     Фильтрует пункты опыта по навыкам/ключевым словам из extract, учитывая синонимы.
     Оставляет в experience у каждой компании количество буллетов = round(duration_years) (+1 при наличии релевантных)
     Сортирует релевантные буллеты по приоритету из extract (чем меньше, тем лучше).
-    Если релевантных меньше лимита, добирает из нерелевантных по их изначальному порядку.
+    Если релевантных меньше лимита, добирает из нерелевантных по изначальному порядку.
+    Также очищает experience.bullets.skills_used и keyword_used от лишнего.
     Возвращает обновленное адаптированное резюме.
     """
     # Собираем множество всех релевантных терминов (термин + синонимы, в нижнем регистре)
@@ -394,6 +395,7 @@ def filter_and_rank_bullets(master_resume, extract):
                 relevant_terms.add(syn_lower)
                 if syn_lower not in priority_map or item.get("priority", 1000) < priority_map.get(syn_lower, 1000):
                     priority_map[syn_lower] = item.get("priority", 1000)
+
 
     adapted_experience = []
     for exp in master_resume.get("experience", []):
@@ -412,6 +414,7 @@ def filter_and_rank_bullets(master_resume, extract):
             else:
                 bullet_priority = None  # нерелевантный
 
+
             bullets_with_meta.append({
                 "bullet": bullet,
                 "priority": bullet_priority,
@@ -421,15 +424,19 @@ def filter_and_rank_bullets(master_resume, extract):
         relevant_bullets = [b for b in bullets_with_meta if b["priority"] is not None]
         non_relevant_bullets = [b for b in bullets_with_meta if b["priority"] is None]
 
+
         # Сортируем релевантные по priority (меньше=выше)
         relevant_bullets.sort(key=lambda x: x["priority"])
+
 
         # Лимит +1 буллет если есть дополнительные релевантные буллеты сверх лимита
         extra_bullet = 1 if len(relevant_bullets) > limit else 0
         max_bullets = limit + extra_bullet
 
+
         # Отбираем релевантные до лимита (или лимит+1)
         selected_bullets = relevant_bullets[:max_bullets]
+
 
         # Если релевантных меньше лимита, добираем нерелевантных по исходному порядку
         if len(selected_bullets) < limit:
@@ -438,19 +445,23 @@ def filter_and_rank_bullets(master_resume, extract):
             non_relevant_bullets.sort(key=lambda x: x["original_idx"])
             selected_bullets.extend(non_relevant_bullets[:needed])
 
+
         # В итог записываем только буллеты, извлекая из структуры
         filtered_bullets = [b["bullet"] for b in selected_bullets]
+
 
         if filtered_bullets:
             exp_copy = exp.copy()
             exp_copy["bullets"] = filtered_bullets
             adapted_experience.append(exp_copy)
 
+
     # Сортировка и фильтрация skills и keywords по приоритету из extract (как было)
     def sort_terms_by_priority(terms, extract_list):
         extract_priority_map = {item["term"].lower(): item.get("priority", 1000) for item in extract_list}
         filtered = [t for t in terms if t["term"].lower() in extract_priority_map]
         return sorted(filtered, key=lambda t: extract_priority_map[t["term"].lower()])
+
 
     adapted_hard_skills = sort_terms_by_priority(
         master_resume.get("skills", {}).get("hard_skills", []), extract.get("required_skills", [])
@@ -462,6 +473,28 @@ def filter_and_rank_bullets(master_resume, extract):
         master_resume.get("keywords", []), extract.get("required_keywords", [])
     )
 
+
+    # ----- Оптимизированная очистка skills_used и keyword_used -----
+    # Создаём множества всех допустимых терминов в нижнем регистре после сортировки
+    final_hard_skills = {s["term"].lower() for s in adapted_hard_skills}
+    final_soft_skills = {s["term"].lower() for s in adapted_soft_skills}
+    final_keywords = {k["term"].lower() for k in adapted_keywords}
+
+    for exp in adapted_experience:
+        for bullet in exp["bullets"]:
+            # Очищаем skills_used
+            bullet["skills_used"] = [
+                s for s in bullet.get("skills_used", [])
+                if s.lower() in final_hard_skills or s.lower() in final_soft_skills
+            ]
+            # Очищаем keyword_used
+            bullet["keyword_used"] = [
+                k for k in bullet.get("keyword_used", [])
+                if k.lower() in final_keywords
+            ]
+    # ---------------------------------------------------------------
+
+
     # Создаём копию мастер резюме и заменяем там адаптированные секции
     adapted_master = master_resume.copy()
     adapted_master["experience"] = adapted_experience
@@ -469,15 +502,18 @@ def filter_and_rank_bullets(master_resume, extract):
     adapted_master["skills"]["soft_skills"] = adapted_soft_skills
     adapted_master["keywords"] = adapted_keywords
 
+
     # Добавляем desired_positions согласно логике
     job_title = extract.get("job_title", "").strip()
     derived_positions = extract.get("derived_positions", [])
+
 
     if job_title:
         adapted_master["desired_positions"] = [job_title]
     elif derived_positions:
         adapted_master["desired_positions"] = [derived_positions[0]]
     # Иначе не меняем adapted_master["desired_positions"]
+
 
     return adapted_master
 
