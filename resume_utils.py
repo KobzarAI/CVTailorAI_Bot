@@ -966,7 +966,7 @@ def cv2text(master_resume: dict) -> str:
                     lines.append(f"[[b1]]{text}")
 
         # Пустая строка после каждой компании (для читаемости)
-        lines.append("\n\n")
+        lines.append("")
 
     # --- Блок Education ---
     education = master_resume.get("education", [])
@@ -989,4 +989,5 @@ def cv2text(master_resume: dict) -> str:
         if name:
             lines.append(f"[[b2]]{name}")
 
-    return "\n".join(line for line in lines if line.strip())
+    #return "\n".join(line for line in lines if line.strip())
+    return "\n".join(lines)
