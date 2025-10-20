@@ -959,11 +959,11 @@ def cv2text(master_resume: dict) -> str:
             if timeline:
                 lines.append(f"[[h4]]{timeline}")
 
-            # Буллеты
-            for bullet in bullets:
-                text = bullet.get("text", "").strip()
-                if text:
-                    lines.append(f"[[b1]]{text}")
+        # Буллеты
+        for bullet in bullets:
+            text = bullet.get("text", "").strip()
+            if text:
+                lines.append(f"[[b1]]{text}")
 
         # Пустая строка после каждой компании (для читаемости)
         lines.append("")
