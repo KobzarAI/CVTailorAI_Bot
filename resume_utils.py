@@ -949,24 +949,24 @@ def cv2text(master_resume: dict) -> str:
             lines.append(f"[[h3]]{job_title}")
 
         # Даты и локация
-        date_part = f"{start_date} - {end_date}".strip()
-        if location:
-            timeline = f"{date_part} | {location}"
-        else:
-            if start_date:
+        if start_date:  # добавляем проверку, что стартовая дата есть
+            date_part = f"{start_date} - {end_date}".strip()
+            if location:
+                timeline = f"{date_part} | {location}"
+            else:
                 timeline = date_part
 
-        if timeline:
-            lines.append(f"[[h4]]{timeline}")
+            if timeline:
+                lines.append(f"[[h4]]{timeline}")
 
-        # Буллеты
-        for bullet in bullets:
-            text = bullet.get("text", "").strip()
-            if text:
-                lines.append(f"[[b1]]{text}")
+            # Буллеты
+            for bullet in bullets:
+                text = bullet.get("text", "").strip()
+                if text:
+                    lines.append(f"[[b1]]{text}")
 
         # Пустая строка после каждой компании (для читаемости)
-        lines.append("\n")
+        lines.append("\n\n")
 
     # --- Блок Education ---
     education = master_resume.get("education", [])
