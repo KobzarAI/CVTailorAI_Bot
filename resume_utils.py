@@ -83,9 +83,6 @@ def format_google_doc_content(input_data):
         end = para.get('endIndex', 0)
 
         paragraph = para.get('paragraph', {})
-        #Если в параграфе нет раздела параграф, это какой-то деффективный и мы его пропускаем
-        if paragraph == {}:
-            continue
         elements = paragraph.get('elements', [])
 
         # Получаем весь текст параграфа (конкатенация содержимого всех textRun)
