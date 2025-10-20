@@ -68,7 +68,7 @@ def format_google_doc_content(input_data):
         '[[h4]]': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': None},
         '[[b1]]': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': 'BULLET_DISC_CIRCLE_SQUARE'},
         '[[b2]]': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': None, 'indentFirstLine': {'magnitude': 21.259842519685044, 'unit': 'PT'}, 'indentStart': {'magnitude': 21.259842519685044, 'unit': 'PT'}},
-        '[[b3]]': {'fontSize': 8,  'bold': True,  'alignment': 'START',  'list': None},
+        '[[b3]]': {'fontSize': 8,  'bold': False, 'alignment': 'START',  'list': None, 'indentFirstLine': {'magnitude': 21.259842519685044, 'unit': 'PT'}, 'indentStart': {'magnitude': 21.259842519685044, 'unit': 'PT'}},
         '[[l1]]': {'fontSize': 9,  'bold': False, 'alignment': 'CENTER', 'list': None},
         '[[l2]]': {'fontSize': 8,  'bold': False, 'alignment': 'CENTER', 'list': None}
     }
@@ -953,7 +953,8 @@ def cv2text(master_resume: dict) -> str:
         if location:
             timeline = f"{date_part} | {location}"
         else:
-            timeline = date_part
+            if start_date:
+                timeline = date_part
 
         if timeline:
             lines.append(f"[[h4]]{timeline}")
@@ -965,14 +966,14 @@ def cv2text(master_resume: dict) -> str:
                 lines.append(f"[[b1]]{text}")
 
         # Пустая строка после каждой компании (для читаемости)
-        lines.append("")
+        lines.append("\n")
 
     # --- Блок Education ---
     education = master_resume.get("education", [])
     certifications = master_resume.get("certifications", [])
 
     if education or certifications:
-        lines.append(f"\n[[h2]]Education")
+        lines.append(f"[[h2]]Education")        #Убрал переход на новую строку, так как остался переход после посл. компании
 
     for edu in education:
         degree = edu.get("degree", "").strip()
