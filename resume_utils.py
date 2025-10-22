@@ -1,4 +1,5 @@
 from fastapi import HTTPException
+import json
 
 def merge_jsons(master_resume, terms):
     err_msg_list = []
