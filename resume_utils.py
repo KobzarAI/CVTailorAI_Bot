@@ -991,3 +991,33 @@ def cv2text(master_resume: dict) -> str:
 
     #return "\n".join(line for line in lines if line.strip())
     return "\n".join(lines)
+
+
+def extract_bullets(input_json: dict) -> str:
+    bullets = []
+    for exp in input_json.get("experience", []):
+        for bullet in exp.get("bullets", []):
+            bullets.append({
+                "id": bullet.get("id"),
+                "text": bullet.get("text"),
+                "skills_used": bullet.get("skills_used", []),
+                "keyword_used": bullet.get("keyword_used", [])
+            })
+    return json.dumps(bullets, indent=2, ensure_ascii=False)
+
+
+def push_bullets(data: dict) -> dict:
+    """
+    Обновляет тексты буллетов в master_resume по id.
+    Возвращает обновлённый master_resume.
+    """
+    bullets_update = {b["id"]: b["text"] for b in data.get("bullets", [])}
+    master_resume = data.get("master_resume", {})
+
+    for exp in master_resume.get("experience", []):
+        for bullet in exp.get("bullets", []):
+            bullet_id = bullet.get("id")
+            if bullet_id in bullets_update:
+                bullet["text"] = bullets_update[bullet_id]
+
+    return master_resume

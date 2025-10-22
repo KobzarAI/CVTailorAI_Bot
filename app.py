@@ -17,7 +17,8 @@ from resume_utils import (
     auto_confirm_terms,
     remove_unconfirmed_and_unused_terms,
     normalize_master_resume,
-    cv2text
+    cv2text,
+    extract_bullets
 )
 
 app = FastAPI()
@@ -184,3 +185,18 @@ async def cv_to_text(request: Request):
         return JSONResponse(content={"text": formatted_text})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=400)
+    
+
+@app.post("/extract_bullets")
+async def extract_bullets_endpoint(request: Request):
+    data = await request.json()
+    result = extract_bullets(data)
+    # возвращаем как объект JSON (чтобы "bullets": Data)
+    return JSONResponse(content={"bullets": json.loads(result)})
+
+
+@app.post("/push_bullets")
+async def push_bullets_endpoint(request: Request):
+    data = await request.json()
+    updated_resume = push_bullets(data)
+    return JSONResponse(content=updated_resume)
