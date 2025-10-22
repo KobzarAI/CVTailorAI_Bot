@@ -18,7 +18,8 @@ from resume_utils import (
     remove_unconfirmed_and_unused_terms,
     normalize_master_resume,
     cv2text,
-    extract_bullets
+    extract_bullets,
+    push_bullets
 )
 
 app = FastAPI()
