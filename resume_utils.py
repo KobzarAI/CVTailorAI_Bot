@@ -1033,12 +1033,12 @@ def simplify_extract(extract: dict) -> str:
     """
     simplified = {
         "mandatory": {
-            "skills": job_requirements.get("mandatory", {}).get("skills", []),
-            "keywords": job_requirements.get("mandatory", {}).get("keywords", [])
+            "skills": extract.get("mandatory", {}).get("skills", []),
+            "keywords": extract.get("mandatory", {}).get("keywords", [])
         },
         "nice_to_have": {
-            "skills": job_requirements.get("nice_to_have", {}).get("skills", []),
-            "keywords": job_requirements.get("nice_to_have", {}).get("keywords", [])
+            "skills": extract.get("nice_to_have", {}).get("skills", []),
+            "keywords": extract.get("nice_to_have", {}).get("keywords", [])
         }
     }
     # Красиво форматированный JSON, чтобы легче читать при отладке
