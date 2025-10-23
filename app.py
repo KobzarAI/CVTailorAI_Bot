@@ -19,7 +19,8 @@ from resume_utils import (
     normalize_master_resume,
     cv2text,
     extract_bullets,
-    push_bullets
+    push_bullets,
+    simplify_extract
 )
 
 app = FastAPI()
@@ -83,10 +84,16 @@ async def generate_adapted_resume_endpoint(request: Request):
 
     adapted_resume = filter_and_rank_bullets(extended_master_resume, extract)
 
+    # Prepare bullets and extract for polishing bullets
+    short_extract = simplify_extract(extract)
+    bullets = extract_bullets(adapted_resume)
+
     return JSONResponse(content={
         "adapted_resume": adapted_resume,
         "match_base": match_base,
-        "match_adjusted": match_adjusted
+        "match_adjusted": match_adjusted,
+        "short_extract": short_extract,
+        "bullets": bullets
     })
 
 
@@ -186,14 +193,6 @@ async def cv_to_text(request: Request):
         return JSONResponse(content={"text": formatted_text})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=400)
-    
-
-@app.post("/extract_bullets")
-async def extract_bullets_endpoint(request: Request):
-    data = await request.json()
-    result = extract_bullets(data)
-    # возвращаем как объект JSON (чтобы "bullets": Data)
-    return JSONResponse(content={"bullets": json.loads(result)})
 
 
 @app.post("/push_bullets")

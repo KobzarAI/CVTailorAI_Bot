@@ -990,11 +990,14 @@ def cv2text(master_resume: dict) -> str:
         if name:
             lines.append(f"[[b2]]{name}")
 
-    #return "\n".join(line for line in lines if line.strip())
     return "\n".join(lines)
 
 
 def extract_bullets(input_json: dict) -> str:
+    """
+    Возвращает строку в виде массива с буллетами:
+    [...]
+    """
     bullets = []
     for exp in input_json.get("experience", []):
         for bullet in exp.get("bullets", []):
@@ -1022,3 +1025,20 @@ def push_bullets(data: dict) -> dict:
                 bullet["text"] = bullets_update[bullet_id]
 
     return master_resume
+
+
+def simplify_extract(extract: dict) -> dict:
+    """
+    Извлекает только mandatory и nice_to_have секции из полной структуры extract.
+    Возвращает словарь с минимально необходимыми данными для промпта.
+    """
+    return {
+        "mandatory": {
+            "skills": extract.get("mandatory", {}).get("skills", []),
+            "keywords": extract.get("mandatory", {}).get("keywords", [])
+        },
+        "nice_to_have": {
+            "skills": extract.get("nice_to_have", {}).get("skills", []),
+            "keywords": extract.get("nice_to_have", {}).get("keywords", [])
+        }
+    }
