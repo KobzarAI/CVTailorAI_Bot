@@ -1027,18 +1027,19 @@ def push_bullets(data: dict) -> dict:
     return master_resume
 
 
-def simplify_extract(extract: dict) -> dict:
+def simplify_extract(extract: dict) -> str:
     """
-    Извлекает только mandatory и nice_to_have секции из полной структуры extract.
-    Возвращает словарь с минимально необходимыми данными для промпта.
+    Возвращает упрощённую структуру job_requirements как JSON-строку.
     """
-    return {
+    simplified = {
         "mandatory": {
-            "skills": extract.get("mandatory", {}).get("skills", []),
-            "keywords": extract.get("mandatory", {}).get("keywords", [])
+            "skills": job_requirements.get("mandatory", {}).get("skills", []),
+            "keywords": job_requirements.get("mandatory", {}).get("keywords", [])
         },
         "nice_to_have": {
-            "skills": extract.get("nice_to_have", {}).get("skills", []),
-            "keywords": extract.get("nice_to_have", {}).get("keywords", [])
+            "skills": job_requirements.get("nice_to_have", {}).get("skills", []),
+            "keywords": job_requirements.get("nice_to_have", {}).get("keywords", [])
         }
     }
+    # Красиво форматированный JSON, чтобы легче читать при отладке
+    return json.dumps(simplified, ensure_ascii=False, indent=2)
