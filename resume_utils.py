@@ -1001,7 +1001,7 @@ def extract_bullets(input_json: dict) -> str:
     начиная со второго повторения любого skill или keyword.
     Формат оптимизирован для LLM: плоская структура без вложенности.
     """
-    bullets = []
+        bullets = []
     skill_counts = Counter()
     keyword_counts = Counter()
 
@@ -1010,9 +1010,20 @@ def extract_bullets(input_json: dict) -> str:
             skills = bullet.get("skills_used", [])
             keywords = bullet.get("keyword_used", [])
 
-            # Определяем повторяющиеся термины
-            needs_synonym_skills = [s for s in skills if (skill_counts[s] := skill_counts[s] + 1) > 1]
-            needs_synonym_keywords = [k for k in keywords if (keyword_counts[k] := keyword_counts[k] + 1) > 1]
+            needs_synonym_skills = []
+            needs_synonym_keywords = []
+
+            # Проверяем повторы skills
+            for s in skills:
+                skill_counts[s] += 1
+                if skill_counts[s] > 1:
+                    needs_synonym_skills.append(s)
+
+            # Проверяем повторы keywords
+            for k in keywords:
+                keyword_counts[k] += 1
+                if keyword_counts[k] > 1:
+                    needs_synonym_keywords.append(k)
 
             bullet_data = {
                 "id": bullet.get("id"),
