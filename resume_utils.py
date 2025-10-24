@@ -1001,7 +1001,7 @@ def extract_bullets(input_json: dict) -> str:
     начиная со второго повторения любого skill или keyword.
     Формат оптимизирован для LLM: плоская структура без вложенности.
     """
-        bullets = []
+    bullets = []
     skill_counts = Counter()
     keyword_counts = Counter()
 
