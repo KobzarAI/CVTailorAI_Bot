@@ -994,7 +994,7 @@ def cv2text(master_resume: dict) -> str:
     return "\n".join(lines)
 
 
-def extract_bullets_flat(input_json: dict) -> str:
+def extract_bullets(input_json: dict) -> str:
     """
     Возвращает строку JSON-массива с буллетами.
     Добавляет поля "needs_synonym_skills" и "needs_synonym_keywords" 
