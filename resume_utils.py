@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 import json
+from collections import Counter
 
 def merge_jsons(master_resume, terms):
     err_msg_list = []
@@ -995,18 +996,49 @@ def cv2text(master_resume: dict) -> str:
 
 def extract_bullets(input_json: dict) -> str:
     """
-    Возвращает строку в виде массива с буллетами:
-    [...]
+    Возвращает строку JSON-массива с буллетами.
+    Автоматически добавляет поле "needs_synonym" начиная со второго повторения
+    любого skill или keyword.
     """
     bullets = []
+    skill_counts = Counter()
+    keyword_counts = Counter()
+
     for exp in input_json.get("experience", []):
         for bullet in exp.get("bullets", []):
-            bullets.append({
+            skills = bullet.get("skills_used", [])
+            keywords = bullet.get("keyword_used", [])
+
+            needs_synonym = {
+                "skills": [],
+                "keywords": []
+            }
+
+            # Проверяем повторы skills
+            for skill in skills:
+                skill_counts[skill] += 1
+                if skill_counts[skill] > 1:
+                    needs_synonym["skills"].append(skill)
+
+            # Проверяем повторы keywords
+            for keyword in keywords:
+                keyword_counts[keyword] += 1
+                if keyword_counts[keyword] > 1:
+                    needs_synonym["keywords"].append(keyword)
+
+            # Добавляем поле только если есть что-то в needs_synonym
+            bullet_data = {
                 "id": bullet.get("id"),
                 "text": bullet.get("text"),
-                "skills_used": bullet.get("skills_used", []),
-                "keyword_used": bullet.get("keyword_used", [])
-            })
+                "skills_used": skills,
+                "keyword_used": keywords
+            }
+
+            if needs_synonym["skills"] or needs_synonym["keywords"]:
+                bullet_data["needs_synonym"] = needs_synonym
+
+            bullets.append(bullet_data)
+
     return json.dumps(bullets, indent=2, ensure_ascii=False)
 
 
