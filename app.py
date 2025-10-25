@@ -190,7 +190,7 @@ async def cv_to_text(request: Request):
     try:
         data = await request.json()
         formatted_text = cv2text(data)
-        return JSONResponse(content={"text": formatted_text})
+        return JSONResponse(content=formatted_text)
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=400)
 
