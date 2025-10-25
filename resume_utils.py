@@ -997,9 +997,9 @@ def cv2text(master_resume: dict) -> str:
 def extract_bullets(input_json: dict) -> str:
     """
     Возвращает строку JSON-массива с буллетами.
-    Добавляет поля "needs_synonym_skills" и "needs_synonym_keywords" 
-    начиная со второго повторения любого skill или keyword.
-    Формат оптимизирован для LLM: плоская структура без вложенности.
+    Если skill или keyword повторяется второй раз или позже, 
+    он добавляется в общий список "needs_synonyms".
+    Формат плоский: skills, keywords, needs_synonyms на одном уровне.
     """
     bullets = []
     skill_counts = Counter()
@@ -1010,33 +1010,29 @@ def extract_bullets(input_json: dict) -> str:
             skills = bullet.get("skills_used", [])
             keywords = bullet.get("keyword_used", [])
 
-            needs_synonym_skills = []
-            needs_synonym_keywords = []
+            needs_synonyms = []
 
             # Проверяем повторы skills
             for s in skills:
                 skill_counts[s] += 1
                 if skill_counts[s] > 1:
-                    needs_synonym_skills.append(s)
+                    needs_synonyms.append(s)
 
             # Проверяем повторы keywords
             for k in keywords:
                 keyword_counts[k] += 1
                 if keyword_counts[k] > 1:
-                    needs_synonym_keywords.append(k)
+                    needs_synonyms.append(k)
 
             bullet_data = {
                 "id": bullet.get("id"),
                 "text": bullet.get("text"),
-                "skills_used": skills,
-                "keywords_used": keywords
+                "skills": skills,
+                "keywords": keywords
             }
 
-            # Добавляем плоские поля для синонимов только если есть повторения
-            if needs_synonym_skills:
-                bullet_data["needs_synonym_skills"] = needs_synonym_skills
-            if needs_synonym_keywords:
-                bullet_data["needs_synonym_keywords"] = needs_synonym_keywords
+            if needs_synonyms:
+                bullet_data["needs_synonyms"] = needs_synonyms
 
             bullets.append(bullet_data)
 
