@@ -377,115 +377,185 @@ def gather_all_current_terms(master_resume):
 
 def filter_and_rank_bullets(master_resume, extract):
     """
-    Фильтрует и адаптирует опыт, навыки и ключевые слова под extract:
-    - Релевантные буллеты сохраняются с учетом синонимов.
-    - Синонимы заменяются на основной термин из extract в bullets и skills/keywords.
-    - Отбирается число bullets = round(duration_years) (+1 при наличии релевантных).
-    - Релевантные bullets сортируются по приоритету.
-    - Если релевантных меньше лимита, добираются нерелевантные.
+    Фильтрует и нормализует experience по навыкам/ключевым словам из extract, учитывая синонимы.
+    - Синонимы заменяются на основной термин из extract (везде: skills, keywords, bullets).
+    - Буллеты ограничиваются по duration_years (+1 при наличии релевантных).
+    - Релевантные буллеты сортируются по приоритету (меньше = выше).
+    - confirmed_by объединяются для одинаковых терминов (после нормализации).
+    - skills_used / keyword_used очищаются от нерелевантных терминов (не попавших в итоговые секции).
+    Возвращает обновлённую копию master_resume.
     """
-    
-    # ---------- 1. Создаём map: синоним/термин -> основной термин и приоритет ----------
-    term_to_root = {}  # maps all synonyms and main term -> root term
-    priority_map = {}  # maps root term -> priority
-    for group in ["required_skills", "required_keywords"]:
+
+    # ---------- 1. Собираем мапы терминов, приоритетов и типов ----------
+    term_to_root = {}     # maps synonym or root -> root term
+    priority_map = {}     # maps root term -> priority
+    term_type_map = {}    # maps root term -> type ("hard"/"soft"/"keyword")
+
+    for group, typ in [("required_skills", "skill"), ("required_keywords", "keyword")]:
         for item in extract.get(group, []):
             root = item["term"]
             priority = item.get("priority", 1000)
-            # основной термин
-            term_to_root[root.lower()] = root
-            priority_map[root.lower()] = priority
+            root_lower = root.lower()
+
+            # определить тип: hard/soft
+            if group == "required_skills":
+                term_type_map[root_lower] = item.get("type", "hard")
+            else:
+                term_type_map[root_lower] = "keyword"
+
+            term_to_root[root_lower] = root
+            priority_map[root_lower] = priority
+
             # синонимы
             for syn in item.get("synonyms", []):
-                term_to_root[syn.lower()] = root
-                # если синоним встречается с меньшим приоритетом, обновляем
-                if syn.lower() not in priority_map or priority < priority_map.get(syn.lower(), 1000):
-                    priority_map[syn.lower()] = priority
-    
-    # ---------- 2. Адаптация опыта ----------
+                syn_lower = syn.lower()
+                term_to_root[syn_lower] = root
+                priority_map[syn_lower] = priority
+                term_type_map[syn_lower] = term_type_map[root_lower]
+    # --------------------------------------------------------------------
+
+    # ---------- 2. Нормализуем experience ----------
     adapted_experience = []
     for exp in master_resume.get("experience", []):
         duration_years = exp.get("duration_years", 0)
         limit = round(duration_years)
+
         bullets_with_meta = []
         for idx, bullet in enumerate(exp.get("bullets", [])):
-            # нормализуем skills и keywords по термам из term_to_root
-            bullet_skills = [term_to_root.get(s.lower(), s) for s in bullet.get("skills_used", [])]
-            bullet_keywords = [term_to_root.get(k.lower(), k) for k in bullet.get("keyword_used", [])]
-            bullet_terms = bullet_skills + bullet_keywords
+            # заменяем синонимы на корни
+            bullet_copy = bullet.copy()
+            bullet_copy["skills_used"] = [
+                term_to_root.get(s.lower(), s) for s in bullet_copy.get("skills_used", [])
+            ]
+            bullet_copy["keyword_used"] = [
+                term_to_root.get(k.lower(), k) for k in bullet_copy.get("keyword_used", [])
+            ]
 
-            # релевантные термины в буллете
-            bullet_relevant_terms = [t for t in bullet_terms if t.lower() in priority_map]
-            bullet_priority = min(priority_map[t.lower()] for t in bullet_relevant_terms) if bullet_relevant_terms else None
+            # определяем релевантность
+            bullet_terms = [t.lower() for t in bullet_copy.get("skills_used", []) + bullet_copy.get("keyword_used", [])]
+            bullet_relevant_terms = [t for t in bullet_terms if t in term_to_root]
+            if bullet_relevant_terms:
+                bullet_priority = min(priority_map.get(t, 1000) for t in bullet_relevant_terms)
+            else:
+                bullet_priority = None
 
             bullets_with_meta.append({
-                "bullet": bullet,
+                "bullet": bullet_copy,
                 "priority": bullet_priority,
-                "original_idx": idx,
-                "normalized_skills": bullet_skills,
-                "normalized_keywords": bullet_keywords
+                "original_idx": idx
             })
-        
-        # разделяем релевантные и нерелевантные bullets
+
         relevant_bullets = [b for b in bullets_with_meta if b["priority"] is not None]
         non_relevant_bullets = [b for b in bullets_with_meta if b["priority"] is None]
-        
-        # сортировка релевантных по приоритету
+
+        # сортировка релевантных по приоритету (меньше = выше)
         relevant_bullets.sort(key=lambda x: x["priority"])
-        
-        # лимит +1 если релевантных больше лимита
+
+        # лимит +1, если релевантных больше лимита
         extra_bullet = 1 if len(relevant_bullets) > limit else 0
         max_bullets = limit + extra_bullet
+
         selected_bullets = relevant_bullets[:max_bullets]
-        
+
         # если релевантных меньше лимита, добираем нерелевантные
         if len(selected_bullets) < limit:
             needed = limit - len(selected_bullets)
             non_relevant_bullets.sort(key=lambda x: x["original_idx"])
             selected_bullets.extend(non_relevant_bullets[:needed])
-        
-        # формируем финальный bullets с заменой синонимов на корневой термин
-        filtered_bullets = []
-        for b in selected_bullets:
-            bullet_copy = b["bullet"].copy()
-            bullet_copy["skills_used"] = [term_to_root.get(s.lower(), s) for s in bullet_copy.get("skills_used", [])]
-            bullet_copy["keyword_used"] = [term_to_root.get(k.lower(), k) for k in bullet_copy.get("keyword_used", [])]
-            filtered_bullets.append(bullet_copy)
-        
+
+        # итоговые буллеты
+        filtered_bullets = [b["bullet"] for b in selected_bullets]
         if filtered_bullets:
             exp_copy = exp.copy()
             exp_copy["bullets"] = filtered_bullets
             adapted_experience.append(exp_copy)
+    # --------------------------------------------------------------------
 
-    # ---------- 3. Адаптация skills и keywords ----------
-    def normalize_and_sort_terms(terms, extract_list):
-        normalized = []
-        seen = set()
-        for t in terms:
-            root = term_to_root.get(t["term"].lower(), t["term"])
-            if root.lower() not in seen:
-                seen.add(root.lower())
-                normalized.append({"term": root, "confirmed_by": t.get("confirmed_by", [])})
-        # сортировка по приоритету
-        extract_priority_map = {item["term"].lower(): item.get("priority", 1000) for item in extract_list}
-        normalized.sort(key=lambda x: extract_priority_map.get(x["term"].lower(), 1000))
-        return normalized
-    
-    adapted_hard_skills = normalize_and_sort_terms(master_resume.get("skills", {}).get("hard_skills", []),
-                                                    extract.get("required_skills", []))
-    adapted_soft_skills = normalize_and_sort_terms(master_resume.get("skills", {}).get("soft_skills", []),
-                                                    extract.get("required_skills", []))
-    adapted_keywords = normalize_and_sort_terms(master_resume.get("keywords", []),
-                                                extract.get("required_keywords", []))
-    
-    # ---------- 4. Создаём финальный adapted_master ----------
+    # ---------- 3. Нормализуем и объединяем skills / keywords ----------
+    def normalize_and_merge_skills(skills_list, typ):
+        merged = {}
+        for s in skills_list:
+            root = term_to_root.get(s["term"].lower())
+            if not root:
+                continue  # не релевантный
+            root_lower = root.lower()
+            root_type = term_type_map.get(root_lower)
+            if typ == "hard" and root_type != "hard":
+                continue
+            if typ == "soft" and root_type != "soft":
+                continue
+            if root_lower not in merged:
+                merged[root_lower] = {"term": root, "confirmed_by": list(s.get("confirmed_by", []))}
+            else:
+                merged[root_lower]["confirmed_by"].extend(s.get("confirmed_by", []))
+        # убираем дубли confirmed_by
+        for val in merged.values():
+            val["confirmed_by"] = list(set(val["confirmed_by"]))
+        return list(merged.values())
+
+    def normalize_and_merge_keywords(keywords_list):
+        merged = {}
+        for k in keywords_list:
+            root = term_to_root.get(k["term"].lower())
+            if not root:
+                continue
+            root_lower = root.lower()
+            if root_lower not in merged:
+                merged[root_lower] = {"term": root, "confirmed_by": list(k.get("confirmed_by", []))}
+            else:
+                merged[root_lower]["confirmed_by"].extend(k.get("confirmed_by", []))
+        for val in merged.values():
+            val["confirmed_by"] = list(set(val["confirmed_by"]))
+        return list(merged.values())
+
+    adapted_hard_skills = normalize_and_merge_skills(
+        master_resume.get("skills", {}).get("hard_skills", []), "hard"
+    )
+    adapted_soft_skills = normalize_and_merge_skills(
+        master_resume.get("skills", {}).get("soft_skills", []), "soft"
+    )
+    adapted_keywords = normalize_and_merge_keywords(
+        master_resume.get("keywords", [])
+    )
+    # --------------------------------------------------------------------
+
+    # ---------- 4. Очистка bullets.skills_used и keyword_used ----------
+    final_hard_skills = {s["term"].lower() for s in adapted_hard_skills}
+    final_soft_skills = {s["term"].lower() for s in adapted_soft_skills}
+    final_keywords = {k["term"].lower() for k in adapted_keywords}
+
+    for exp in adapted_experience:
+        for bullet in exp["bullets"]:
+            bullet["skills_used"] = [
+                s for s in bullet.get("skills_used", [])
+                if s.lower() in final_hard_skills or s.lower() in final_soft_skills
+            ]
+            bullet["keyword_used"] = [
+                k for k in bullet.get("keyword_used", [])
+                if k.lower() in final_keywords
+            ]
+    # --------------------------------------------------------------------
+
+    # ---------- 5. Сортировка терминов по приоритету ----------
+    def sort_terms_by_priority(terms):
+        return sorted(
+            terms,
+            key=lambda t: priority_map.get(t["term"].lower(), 1000)
+        )
+
+    adapted_hard_skills = sort_terms_by_priority(adapted_hard_skills)
+    adapted_soft_skills = sort_terms_by_priority(adapted_soft_skills)
+    adapted_keywords = sort_terms_by_priority(adapted_keywords)
+    # --------------------------------------------------------------------
+
+    # ---------- 6. Формируем итоговую структуру ----------
     adapted_master = master_resume.copy()
     adapted_master["experience"] = adapted_experience
     adapted_master["skills"]["hard_skills"] = adapted_hard_skills
     adapted_master["skills"]["soft_skills"] = adapted_soft_skills
     adapted_master["keywords"] = adapted_keywords
 
-    # desired_positions
+    # сохраняем desired_positions как в оригинале
     job_title = extract.get("job_title", "").strip()
     derived_positions = extract.get("derived_positions", [])
     if job_title:
@@ -494,6 +564,7 @@ def filter_and_rank_bullets(master_resume, extract):
         adapted_master["desired_positions"] = [derived_positions[0]]
 
     return adapted_master
+
 
 
 def unconfirmed2terms(input_data):
