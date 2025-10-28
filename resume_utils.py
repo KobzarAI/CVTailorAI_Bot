@@ -485,10 +485,11 @@ def filter_and_rank_bullets(master_resume, extract):
                     covered_terms.update(bullet_coverage[bullet["id"]])
                     break
 
-    # ---------- 7. Лимиты и фильтрация ----------
+    # ---------- 7. Лимиты и фильтрация (релевантные сначала, нерелевантные если есть место) ----------
     MAX_BULLETS = 25
     MAX_TERMS_PER_BULLET = 3
 
+    # сортировка по минимальному приоритету среди терминов в буллете
     selected_for_coverage.sort(
         key=lambda b: min(
             [priority_map.get(t.lower(), 1000) for t in (b.get("skills_used", []) + b.get("keywords_used", []))],
@@ -499,13 +500,25 @@ def filter_and_rank_bullets(master_resume, extract):
     final_bullets = selected_for_coverage[:MAX_BULLETS]
 
     for b in final_bullets:
-        terms = b.get("skills_used", []) + b.get("keywords_used", [])
-        sorted_terms = sorted(terms, key=lambda t: priority_map.get(t.lower(), 1000))
-        trimmed = sorted_terms[:MAX_TERMS_PER_BULLET]
-        skills_trimmed = [t for t in trimmed if skill_type_map.get(t.lower()) in ["hard", "soft"]]
-        keywords_trimmed = [t for t in trimmed if skill_type_map.get(t.lower()) == "keyword"]
-        b["skills_used"] = skills_trimmed
-        b["keywords_used"] = keywords_trimmed
+        all_terms = b.get("skills_used", []) + b.get("keywords_used", [])
+        
+        # разделяем на релевантные и нерелевантные
+        relevant_terms = [t for t in all_terms if t in mandatory_terms or t in nice_terms]
+        non_relevant_terms = [t for t in all_terms if t not in relevant_terms]
+        
+        # сортировка релевантных и нерелевантных по приоритету
+        relevant_terms_sorted = sorted(relevant_terms, key=lambda t: priority_map.get(t.lower(), 1000))
+        non_relevant_terms_sorted = sorted(non_relevant_terms, key=lambda t: priority_map.get(t.lower(), 1000))
+        
+        # берём сначала релевантные, потом дополняем нерелевантными до лимита
+        trimmed_terms = relevant_terms_sorted[:MAX_TERMS_PER_BULLET]
+        if len(trimmed_terms) < MAX_TERMS_PER_BULLET:
+            remaining_slots = MAX_TERMS_PER_BULLET - len(trimmed_terms)
+            trimmed_terms += non_relevant_terms_sorted[:remaining_slots]
+        
+        # распределяем по хард/софт/кейвордс
+        b["skills_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) in ["hard", "soft"]]
+        b["keywords_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) == "keyword"]
 
     # ---------- 8. Формирование адаптированных скилов ----------
     adapted_hard = {}
