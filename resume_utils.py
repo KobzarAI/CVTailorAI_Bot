@@ -474,7 +474,7 @@ def filter_and_rank_bullets(master_resume, extract):
     for term in nice_terms:
         if term not in covered_terms:
             for bullet in filtered_bullets:
-                if term in bullet_coverage[bullet["id"]]:
+                if term in bullet_coverage[bullet["id"]] and bullet not in selected_for_coverage:
                     selected_for_coverage.append(bullet)
                     covered_terms.update(bullet_coverage[bullet["id"]])
                     break
