@@ -389,11 +389,9 @@ def filter_and_rank_bullets(master_resume, extract):
             root = item["term"]
             priority = item.get("priority", 1000)
 
-            # основной термин
             term_to_root[root.lower()] = root
             priority_map[root.lower()] = priority
 
-            # синонимы
             for syn in item.get("synonyms", []):
                 term_to_root[syn.lower()] = root
                 if syn.lower() not in priority_map or priority < priority_map[syn.lower()]:
@@ -407,15 +405,29 @@ def filter_and_rank_bullets(master_resume, extract):
     origin_map = {}
     skill_type_map = {}
 
+    reserved_skills = {}
+    reserved_keywords = {}
+
+    # hard skills
     for s in hard_skills_master:
-        origin_map[s["term"].lower()] = s.get("origin", False)
-        skill_type_map[s["term"].lower()] = "hard"
+        term_l = s["term"].lower()
+        origin_map[term_l] = s.get("origin", False)
+        skill_type_map[term_l] = "hard"
+        reserved_skills[term_l] = {"term": s["term"], "type": "hard", "origin": s.get("origin", False)}
+
+    # soft skills
     for s in soft_skills_master:
-        origin_map[s["term"].lower()] = s.get("origin", False)
-        skill_type_map[s["term"].lower()] = "soft"
+        term_l = s["term"].lower()
+        origin_map[term_l] = s.get("origin", False)
+        skill_type_map[term_l] = "soft"
+        reserved_skills[term_l] = {"term": s["term"], "type": "soft", "origin": s.get("origin", False)}
+
+    # keywords
     for k in keywords_master:
-        origin_map[k["term"].lower()] = k.get("origin", False)
-        skill_type_map[k["term"].lower()] = "keyword"
+        term_l = k["term"].lower()
+        origin_map[term_l] = k.get("origin", False)
+        skill_type_map[term_l] = "keyword"
+        reserved_keywords[term_l] = {"term": k["term"], "type": "keyword", "origin": k.get("origin", False)}
 
     # ---------- 3. Извлекаем все буллеты из master_resume.experience ----------
     selected_bullets = []
@@ -434,8 +446,6 @@ def filter_and_rank_bullets(master_resume, extract):
     # ---------- 5. Подсчёт покрытия и приоритезация ----------
     bullet_priority = {}
     bullet_coverage = {}
-    skill_coverage = {term_to_root.get(s["term"].lower(), s["term"]): [] for s in hard_skills_master}
-    keyword_coverage = {term_to_root.get(k["term"].lower(), k["term"]): [] for k in keywords_master}
 
     for bullet in filtered_bullets:
         b_id = bullet["id"]
@@ -460,13 +470,12 @@ def filter_and_rank_bullets(master_resume, extract):
         (nice_data.get("keywords") or [])
     )
 
-    # нормализуем к root-форме
     mandatory_terms = [term_to_root.get(t.lower(), t) for t in mandatory_terms_raw]
     nice_terms = [term_to_root.get(t.lower(), t) for t in nice_terms_raw]
 
     for term in mandatory_terms:
         for bullet in filtered_bullets:
-            if term in bullet_coverage[bullet["id"]]:
+            if term in bullet_coverage[bullet["id"]] and bullet not in selected_for_coverage:
                 selected_for_coverage.append(bullet)
                 covered_terms.update(bullet_coverage[bullet["id"]])
                 break
@@ -508,26 +517,38 @@ def filter_and_rank_bullets(master_resume, extract):
 
     for b in final_bullets:
         b_id = b["id"]
+        # skills
         for t in b.get("skills_used", []):
             term_l = t.lower()
             root = term_to_root.get(term_l, t)
-            origin_flag = origin_map.get(term_l, False)
-            if skill_type_map.get(term_l) == "hard":
-                adapted_hard.setdefault(root, {"term": root, "confirmed_by": [], "origin": origin_flag})
-                adapted_hard[root]["confirmed_by"].append(b_id)
-            elif skill_type_map.get(term_l) == "soft":
-                adapted_soft.setdefault(root, {"term": root, "confirmed_by": [], "origin": origin_flag})
-                adapted_soft[root]["confirmed_by"].append(b_id)
+            # восстановление из reserved_skills если нет типа
+            skill_info = reserved_skills.get(term_l, {"type": None, "origin": False, "term": root})
+            origin_flag = skill_info.get("origin", False)
+            skill_type = skill_info.get("type")
+            if skill_type == "hard":
+                adapted_hard.setdefault(root, {"term": root, "confirmed_by": set(), "origin": origin_flag})
+                adapted_hard[root]["confirmed_by"].add(b_id)
+            elif skill_type == "soft":
+                adapted_soft.setdefault(root, {"term": root, "confirmed_by": set(), "origin": origin_flag})
+                adapted_soft[root]["confirmed_by"].add(b_id)
+        # keywords
         for t in b.get("keywords_used", []):
             term_l = t.lower()
             root = term_to_root.get(term_l, t)
-            origin_flag = origin_map.get(term_l, False)
-            adapted_keywords.setdefault(root, {"term": root, "confirmed_by": [], "origin": origin_flag})
-            adapted_keywords[root]["confirmed_by"].append(b_id)
+            keyword_info = reserved_keywords.get(term_l, {"type": "keyword", "origin": False, "term": root})
+            origin_flag = keyword_info.get("origin", False)
+            adapted_keywords.setdefault(root, {"term": root, "confirmed_by": set(), "origin": origin_flag})
+            adapted_keywords[root]["confirmed_by"].add(b_id)
 
     for term in mandatory_terms:
         if term not in adapted_hard:
-            adapted_hard[term] = {"term": term, "confirmed_by": [], "origin": origin_map.get(term.lower(), False)}
+            info = reserved_skills.get(term.lower(), {"type": "hard", "origin": False})
+            adapted_hard[term] = {"term": term, "confirmed_by": set(), "origin": info.get("origin", False)}
+
+    # Преобразуем set обратно в list
+    for d in [adapted_hard, adapted_soft, adapted_keywords]:
+        for v in d.values():
+            v["confirmed_by"] = list(v["confirmed_by"])
 
     # ---------- 9. Очистка ----------
     valid_terms = set(list(adapted_hard.keys()) + list(adapted_soft.keys()) + list(adapted_keywords.keys()))
