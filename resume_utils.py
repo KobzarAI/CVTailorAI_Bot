@@ -539,15 +539,17 @@ def filter_and_rank_bullets(master_resume, extract):
     adapted_soft = {t: v for t, v in adapted_soft.items() if v["confirmed_by"]}
     adapted_keywords = {t: v for t, v in adapted_keywords.items() if v["confirmed_by"]}
 
-    # ---------- 10. Возврат ----------
-    adapted_master = {
-        "skills": {
-            "hard_skills": list(adapted_hard.values()),
-            "soft_skills": list(adapted_soft.values()),
-        },
-        "keywords": list(adapted_keywords.values()),
-        "experience": final_bullets,
+    # ---------- 10. Копия мастера с заменой секций ----------
+    adapted_master = master_resume.copy()  # поверхностная копия
+    # ---------- обновляем желаемую позицию ----------
+    if "job_title" in extract:
+        adapted_master["desired_positions"] = [extract["job_title"]]
+    adapted_master["skills"] = {
+        "hard_skills": list(adapted_hard.values()),
+        "soft_skills": list(adapted_soft.values()),
     }
+    adapted_master["keywords"] = list(adapted_keywords.values())
+    adapted_master["experience"] = final_bullets
 
     return adapted_master
 
