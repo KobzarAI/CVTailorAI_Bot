@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 import json
 from collections import Counter
+import copy
 
 def merge_jsons(master_resume, terms):
     err_msg_list = []
@@ -389,9 +390,11 @@ def filter_and_rank_bullets(master_resume, extract):
             root = item["term"]
             priority = item.get("priority", 1000)
 
+            # основной термин
             term_to_root[root.lower()] = root
             priority_map[root.lower()] = priority
 
+            # синонимы
             for syn in item.get("synonyms", []):
                 term_to_root[syn.lower()] = root
                 if syn.lower() not in priority_map or priority < priority_map[syn.lower()]:
@@ -401,39 +404,24 @@ def filter_and_rank_bullets(master_resume, extract):
     hard_skills_master = master_resume.get("skills", {}).get("hard_skills", [])
     soft_skills_master = master_resume.get("skills", {}).get("soft_skills", [])
     keywords_master = master_resume.get("keywords", [])
-
     origin_map = {}
     skill_type_map = {}
 
-    reserved_skills = {}
-    reserved_keywords = {}
-
-    # hard skills
     for s in hard_skills_master:
-        term_l = s["term"].lower()
-        origin_map[term_l] = s.get("origin", False)
-        skill_type_map[term_l] = "hard"
-        reserved_skills[term_l] = {"term": s["term"], "type": "hard", "origin": s.get("origin", False)}
-
-    # soft skills
+        origin_map[s["term"].lower()] = s.get("origin", False)
+        skill_type_map[s["term"].lower()] = "hard"
     for s in soft_skills_master:
-        term_l = s["term"].lower()
-        origin_map[term_l] = s.get("origin", False)
-        skill_type_map[term_l] = "soft"
-        reserved_skills[term_l] = {"term": s["term"], "type": "soft", "origin": s.get("origin", False)}
-
-    # keywords
-    for k in keywords_master:
-        term_l = k["term"].lower()
-        origin_map[term_l] = k.get("origin", False)
-        skill_type_map[term_l] = "keyword"
-        reserved_keywords[term_l] = {"term": k["term"], "type": "keyword", "origin": k.get("origin", False)}
+        origin_map[s["term"].lower()] = s.get("origin", False)
+        skill_type_map[s["term"].lower()] = "soft"
+    for k in keywords_master if isinstance(keywords_master, list) else keywords_master.get("terms", []):
+        origin_map[k["term"].lower()] = k.get("origin", False)
+        skill_type_map[k["term"].lower()] = "keyword"
 
     # ---------- 3. Извлекаем все буллеты из master_resume.experience ----------
     selected_bullets = []
     for exp in master_resume.get("experience", []):
         for b in exp.get("bullets", []):
-            selected_bullets.append({"bullet": b})
+            selected_bullets.append({"bullet": b, "company": exp["company"]})
 
     # ---------- 4. Нормализация буллетов (синонимы → root) ----------
     filtered_bullets = []
@@ -441,12 +429,12 @@ def filter_and_rank_bullets(master_resume, extract):
         bullet_copy = b["bullet"].copy()
         bullet_copy["skills_used"] = [term_to_root.get(s.lower(), s) for s in bullet_copy.get("skills_used", [])]
         bullet_copy["keywords_used"] = [term_to_root.get(k.lower(), k) for k in bullet_copy.get("keywords_used", [])]
+        bullet_copy["_company"] = b["company"]
         filtered_bullets.append(bullet_copy)
 
     # ---------- 5. Подсчёт покрытия и приоритезация ----------
     bullet_priority = {}
     bullet_coverage = {}
-
     for bullet in filtered_bullets:
         b_id = bullet["id"]
         used_terms = bullet.get("skills_used", []) + bullet.get("keywords_used", [])
@@ -454,7 +442,7 @@ def filter_and_rank_bullets(master_resume, extract):
         bullet_priority[b_id] = min(priorities) if priorities else None
         bullet_coverage[b_id] = set(used_terms)
 
-    # ---------- 6. Жадное покрытие с учётом mandatory / nice_to_have ----------
+    # ---------- 6. Жадное покрытие ----------
     covered_terms = set()
     selected_for_coverage = []
 
@@ -475,7 +463,7 @@ def filter_and_rank_bullets(master_resume, extract):
 
     for term in mandatory_terms:
         for bullet in filtered_bullets:
-            if term in bullet_coverage[bullet["id"]] and bullet not in selected_for_coverage:
+            if term in bullet_coverage[bullet["id"]]:
                 selected_for_coverage.append(bullet)
                 covered_terms.update(bullet_coverage[bullet["id"]])
                 break
@@ -483,94 +471,80 @@ def filter_and_rank_bullets(master_resume, extract):
     for term in nice_terms:
         if term not in covered_terms:
             for bullet in filtered_bullets:
-                if term in bullet_coverage[bullet["id"]] and bullet not in selected_for_coverage:
+                if term in bullet_coverage[bullet["id"]]:
                     selected_for_coverage.append(bullet)
                     covered_terms.update(bullet_coverage[bullet["id"]])
                     break
 
-    # ---------- 7. Лимиты и фильтрация ----------
+    # ---------- 7. Лимиты ----------
     MAX_BULLETS = 25
     MAX_TERMS_PER_BULLET = 3
-
     selected_for_coverage.sort(
         key=lambda b: min(
             [priority_map.get(t.lower(), 1000) for t in (b.get("skills_used", []) + b.get("keywords_used", []))],
             default=1000,
         )
     )
-
     final_bullets = selected_for_coverage[:MAX_BULLETS]
 
-    for b in final_bullets:
-        terms = b.get("skills_used", []) + b.get("keywords_used", [])
-        sorted_terms = sorted(terms, key=lambda t: priority_map.get(t.lower(), 1000))
-        trimmed = sorted_terms[:MAX_TERMS_PER_BULLET]
-        skills_trimmed = [t for t in trimmed if skill_type_map.get(t.lower()) in ["hard", "soft"]]
-        keywords_trimmed = [t for t in trimmed if skill_type_map.get(t.lower()) == "keyword"]
-        b["skills_used"] = skills_trimmed
-        b["keywords_used"] = keywords_trimmed
-
-    # ---------- 8. Формирование адаптированных скилов ----------
-    adapted_hard = {}
-    adapted_soft = {}
-    adapted_keywords = {}
-
+    # ---------- 8. Адаптация навыков ----------
+    adapted_hard, adapted_soft, adapted_keywords = {}, {}, {}
     for b in final_bullets:
         b_id = b["id"]
-        # skills
         for t in b.get("skills_used", []):
-            term_l = t.lower()
-            root = term_to_root.get(term_l, t)
-            # восстановление из reserved_skills если нет типа
-            skill_info = reserved_skills.get(term_l, {"type": None, "origin": False, "term": root})
-            origin_flag = skill_info.get("origin", False)
-            skill_type = skill_info.get("type")
-            if skill_type == "hard":
+            t_l = t.lower()
+            root = term_to_root.get(t_l, t)
+            origin_flag = origin_map.get(t_l, False)
+            typ = skill_type_map.get(t_l)
+            if typ == "hard":
                 adapted_hard.setdefault(root, {"term": root, "confirmed_by": set(), "origin": origin_flag})
                 adapted_hard[root]["confirmed_by"].add(b_id)
-            elif skill_type == "soft":
+            elif typ == "soft":
                 adapted_soft.setdefault(root, {"term": root, "confirmed_by": set(), "origin": origin_flag})
                 adapted_soft[root]["confirmed_by"].add(b_id)
-        # keywords
         for t in b.get("keywords_used", []):
-            term_l = t.lower()
-            root = term_to_root.get(term_l, t)
-            keyword_info = reserved_keywords.get(term_l, {"type": "keyword", "origin": False, "term": root})
-            origin_flag = keyword_info.get("origin", False)
+            t_l = t.lower()
+            root = term_to_root.get(t_l, t)
+            origin_flag = origin_map.get(t_l, False)
             adapted_keywords.setdefault(root, {"term": root, "confirmed_by": set(), "origin": origin_flag})
             adapted_keywords[root]["confirmed_by"].add(b_id)
 
-    for term in mandatory_terms:
-        if term not in adapted_hard:
-            info = reserved_skills.get(term.lower(), {"type": "hard", "origin": False})
-            adapted_hard[term] = {"term": term, "confirmed_by": set(), "origin": info.get("origin", False)}
+    # ---------- 9. Глубокая копия мастера ----------
+    adapted_master = copy.deepcopy(master_resume)
 
-    # Преобразуем set обратно в list
-    for d in [adapted_hard, adapted_soft, adapted_keywords]:
-        for v in d.values():
-            v["confirmed_by"] = list(v["confirmed_by"])
-
-    # ---------- 9. Очистка ----------
-    valid_terms = set(list(adapted_hard.keys()) + list(adapted_soft.keys()) + list(adapted_keywords.keys()))
-    for b in final_bullets:
-        b["skills_used"] = [s for s in b.get("skills_used", []) if s in valid_terms]
-        b["keywords_used"] = [k for k in b.get("keywords_used", []) if k in valid_terms]
-
-    adapted_hard = {t: v for t, v in adapted_hard.items() if v["confirmed_by"] or t in mandatory_terms}
-    adapted_soft = {t: v for t, v in adapted_soft.items() if v["confirmed_by"]}
-    adapted_keywords = {t: v for t, v in adapted_keywords.items() if v["confirmed_by"]}
-
-    # ---------- 10. Копия мастера с заменой секций ----------
-    adapted_master = master_resume.copy()  # поверхностная копия
-    # ---------- обновляем желаемую позицию ----------
+    # ---------- 10. Обновление желаемой позиции ----------
     if "job_title" in extract:
         adapted_master["desired_positions"] = [extract["job_title"]]
-    adapted_master["skills"] = {
-        "hard_skills": list(adapted_hard.values()),
-        "soft_skills": list(adapted_soft.values()),
-    }
-    adapted_master["keywords"] = list(adapted_keywords.values())
-    adapted_master["experience"] = final_bullets
+
+    # ---------- 11. Обновляем skills безопасно ----------
+    skills_block = adapted_master.get("skills", {})
+    skills_block["hard_skills"] = [
+        {**v, "confirmed_by": sorted(list(v["confirmed_by"]))} for v in adapted_hard.values()
+    ]
+    skills_block["soft_skills"] = [
+        {**v, "confirmed_by": sorted(list(v["confirmed_by"]))} for v in adapted_soft.values()
+    ]
+    adapted_master["skills"] = skills_block
+
+    # ---------- 12. Обновляем keywords безопасно ----------
+    if isinstance(adapted_master.get("keywords"), list):
+        adapted_master["keywords"] = [
+            {**v, "confirmed_by": sorted(list(v["confirmed_by"]))} for v in adapted_keywords.values()
+        ]
+    elif isinstance(adapted_master.get("keywords"), dict):
+        adapted_master["keywords"]["terms"] = [
+            {**v, "confirmed_by": sorted(list(v["confirmed_by"]))} for v in adapted_keywords.values()
+        ]
+
+    # ---------- 13. Обновляем experience по компаниям ----------
+    exp_map = {exp["company"]: {**exp, "bullets": []} for exp in master_resume.get("experience", [])}
+    for b in final_bullets:
+        company = b.get("_company")
+        if company in exp_map:
+            exp_map[company]["bullets"].append({
+                k: v for k, v in b.items() if not k.startswith("_")
+            })
+    adapted_master["experience"] = [exp for exp in exp_map.values() if exp["bullets"]]
 
     return adapted_master
 
