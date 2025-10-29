@@ -436,7 +436,7 @@ def filter_and_rank_bullets(master_resume, extract):
     for b in selected_bullets:
         bullet_copy = b["bullet"].copy()
         bullet_copy["skills_used"] = [term_to_root.get(s.lower(), s) for s in bullet_copy.get("skills_used", [])]
-        bullet_copy["keywords_used"] = [term_to_root.get(k.lower(), k) for k in bullet_copy.get("keywords_used", [])]
+        bullet_copy["keyword_used"] = [term_to_root.get(k.lower(), k) for k in bullet_copy.get("keyword_used", [])]
         filtered_bullets.append(bullet_copy)
 
     # ---------- 5. Подсчёт покрытия и приоритезация ----------
@@ -445,7 +445,7 @@ def filter_and_rank_bullets(master_resume, extract):
 
     for bullet in filtered_bullets:
         b_id = bullet["id"]
-        used_terms = bullet.get("skills_used", []) + bullet.get("keywords_used", [])
+        used_terms = bullet.get("skills_used", []) + bullet.get("keyword_used", [])
         priorities = [priority_map.get(t.lower(), 1000) for t in used_terms]
         bullet_priority[b_id] = min(priorities) if priorities else None
         bullet_coverage[b_id] = set(used_terms)
@@ -492,7 +492,7 @@ def filter_and_rank_bullets(master_resume, extract):
     # сортировка по минимальному приоритету среди терминов в буллете
     selected_for_coverage.sort(
         key=lambda b: min(
-            [priority_map.get(t.lower(), 1000) for t in (b.get("skills_used", []) + b.get("keywords_used", []))],
+            [priority_map.get(t.lower(), 1000) for t in (b.get("skills_used", []) + b.get("keyword_used", []))],
             default=1000,
         )
     )
@@ -500,7 +500,7 @@ def filter_and_rank_bullets(master_resume, extract):
     final_bullets = selected_for_coverage[:MAX_BULLETS]   #берутся только первые 25 буллетов с наивысшим приоритетом - бредятина
 
     for b in final_bullets:
-        all_terms = b.get("skills_used", []) + b.get("keywords_used", [])                       #Склеиваем все термины
+        all_terms = b.get("skills_used", []) + b.get("keyword_used", [])                       #Склеиваем все термины
         
         # разделяем на релевантные и нерелевантные
         relevant_terms = [t for t in all_terms if t in mandatory_terms or t in nice_terms]
@@ -518,7 +518,7 @@ def filter_and_rank_bullets(master_resume, extract):
         
         # распределяем по хард/софт/кейвордс
         b["skills_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) in ["hard", "soft"]] #перетираем скил юзед скилами из топ 3
-        b["keywords_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) == "keyword"] #перетираем кейвордами из топ 3
+        b["keyword_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) == "keyword"] #перетираем кейвордами из топ 3
 
     # ---------- 8. Формирование адаптированных скилов ----------
     adapted_hard = {}
@@ -542,7 +542,7 @@ def filter_and_rank_bullets(master_resume, extract):
                 adapted_soft.setdefault(root, {"term": root, "confirmed_by": [], "origin": origin_flag})
                 if b_id not in adapted_soft[root]["confirmed_by"]:
                     adapted_soft[root]["confirmed_by"].append(b_id)
-        for t in b.get("keywords_used", []):
+        for t in b.get("keyword_used", []):
             term_l = t.lower()
             root = term_to_root.get(term_l, t)
             origin_flag = origin_map.get(term_l, False)
@@ -559,7 +559,7 @@ def filter_and_rank_bullets(master_resume, extract):
     valid_terms = set(list(adapted_hard.keys()) + list(adapted_soft.keys()) + list(adapted_keywords.keys()))
     for b in final_bullets:
         b["skills_used"] = [s for s in b.get("skills_used", []) if s in valid_terms]
-        b["keywords_used"] = [k for k in b.get("keywords_used", []) if k in valid_terms]
+        b["keyword_used"] = [k for k in b.get("keyword_used", []) if k in valid_terms]
 
     # ---------- 10. Формирование итогового адаптированного мастера ----------
     adapted_resume = copy.deepcopy(master_resume)
