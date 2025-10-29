@@ -485,7 +485,7 @@ def filter_and_rank_bullets(master_resume, extract):
                     covered_terms.update(bullet_coverage[bullet["id"]])
                     break
 
-    # ---------- 7. Лимиты и фильтрация (релевантные сначала, нерелевантные если есть место) ----------
+    # ---------- 7. Лимиты и фильтрация (релевантные сначала, нерелевантные если есть место) ---------- Перписать однозначно
     MAX_BULLETS = 25
     MAX_TERMS_PER_BULLET = 3
 
@@ -497,10 +497,10 @@ def filter_and_rank_bullets(master_resume, extract):
         )
     )
 
-    final_bullets = selected_for_coverage[:MAX_BULLETS]
+    final_bullets = selected_for_coverage[:MAX_BULLETS]   #берутся только первые 25 буллетов с наивысшим приоритетом - бредятина
 
     for b in final_bullets:
-        all_terms = b.get("skills_used", []) + b.get("keywords_used", [])
+        all_terms = b.get("skills_used", []) + b.get("keywords_used", [])                       #Склеиваем все термины
         
         # разделяем на релевантные и нерелевантные
         relevant_terms = [t for t in all_terms if t in mandatory_terms or t in nice_terms]
@@ -517,15 +517,15 @@ def filter_and_rank_bullets(master_resume, extract):
             trimmed_terms += non_relevant_terms_sorted[:remaining_slots]
         
         # распределяем по хард/софт/кейвордс
-        b["skills_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) in ["hard", "soft"]]
-        b["keywords_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) == "keyword"]
+        b["skills_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) in ["hard", "soft"]] #перетираем скил юзед скилами из топ 3
+        b["keywords_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) == "keyword"] #перетираем кейвордами из топ 3
 
     # ---------- 8. Формирование адаптированных скилов ----------
     adapted_hard = {}
     adapted_soft = {}
     adapted_keywords = {}
 
-    for b in final_bullets:
+    for b in final_bullets:         #Идя по буллетам, создает скилы и кейворды, в пока внутренних списках с конфирмами (буллет на котором стоит)
         b_id = b["id"]
         for t in b.get("skills_used", []):
             term_l = t.lower()
@@ -551,7 +551,7 @@ def filter_and_rank_bullets(master_resume, extract):
                 adapted_keywords[root]["confirmed_by"].append(b_id)
 
     for term in mandatory_terms:
-        if term.lower() not in adapted_hard and term.lower() in full_skill_pool:
+        if term.lower() not in adapted_hard and term.lower() in full_skill_pool:  #долбоебизм, но если обязательный термин не в хардах, то заносит его в харды, и плевать если он есть в софтах
             s = full_skill_pool[term.lower()]
             adapted_hard[term] = {"term": term, "confirmed_by": [], "origin": s.get("origin", False)}
 
@@ -575,25 +575,29 @@ def filter_and_rank_bullets(master_resume, extract):
     }
     adapted_resume["keywords"] = list(adapted_keywords.values())
 
-    # сохраняем очищенные буллеты в адаптированном резюме для переиспользования
-    adapted_resume["experience"] = final_bullets
-
     # ---------- 11. Восстанавливаем опыт по компаниям ----------
     if "experience" in master_resume and isinstance(master_resume["experience"], list):
-        bullet_map = {b["id"]: b for b in adapted_resume.get("experience", []) if isinstance(b, dict)}
-        ordered_ids = [b["id"] for b in adapted_resume.get("experience", []) if isinstance(b, dict)]
+        # делаем карту bullet_id → bullet
+        bullet_map = {b["id"]: b for b in final_bullets if isinstance(b, dict)}
 
-        for company in adapted_resume["experience"] if isinstance(adapted_resume["experience"], list) else []:
+        restored_experience = []
+
+        for company in adapted_resume.get("experience", []):
             if not isinstance(company.get("bullets"), list):
                 continue
 
+            # ID буллетов, которые изначально были в этой компании
             original_ids = [b.get("id") for b in company["bullets"] if "id" in b]
-            filtered_bullets = [
-                bullet_map[bid]
-                for bid in ordered_ids
-                if bid in original_ids and bid in bullet_map
-            ]
-            company["bullets"] = filtered_bullets
+
+            # фильтруем: оставляем только те, что остались в финальном пуле
+            filtered_bullets = [bullet_map[bid] for bid in original_ids if bid in bullet_map]
+
+            if filtered_bullets:
+                # обновляем компанию и добавляем в новый список
+                company["bullets"] = filtered_bullets
+                restored_experience.append(company)
+
+        adapted_resume["experience"] = restored_experience
 
     return adapted_resume
 
