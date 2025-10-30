@@ -505,7 +505,7 @@ def filter_and_rank_bullets(master_resume, extract):
         if any(t in top_covered_terms for t in used_terms):
             filtered_bullets_for_final.append(b)
 
-    # учёт частоты терминов (для ограничения повторов и разнообразия)
+    # учёт частоты терминов по всему резюме (глобально)
     term_usage_count = {}
     final_bullets = []
 
@@ -521,16 +521,16 @@ def filter_and_rank_bullets(master_resume, extract):
         non_relevant_terms_sorted = sorted(non_relevant_terms, key=lambda t: priority_map.get(t.lower(), 1000))
 
         trimmed_terms = []
+
+        # формируем список терминов для текущего буллета с учётом глобального лимита
         for t in relevant_terms_sorted + non_relevant_terms_sorted:
             term_l = t.lower()
             prio = priority_map.get(term_l, 1000)
 
-            # лимиты повторов по приоритету
-            if prio in (1, 2):
-                limit = 2   # mandatory — разрешаем 2 упоминания
-            else:
-                limit = 1   # nice-to-have и прочие — по одному разу
+            # лимиты по приоритету (глобально)
+            limit = 2 if prio in (1, 2) else 1
 
+            # если лимит ещё не исчерпан — добавляем
             if term_usage_count.get(term_l, 0) < limit:
                 trimmed_terms.append(t)
                 term_usage_count[term_l] = term_usage_count.get(term_l, 0) + 1
