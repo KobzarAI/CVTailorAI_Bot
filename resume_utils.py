@@ -359,6 +359,26 @@ def gather_origin_terms(master_resume):
     ]
     return origin_skills, origin_keywords
 
+def gather_all_current_terms(master_resume):
+    """
+    Gather all current skills and keywords (hard+soft skills and keywords),
+    ignoring origin flag, for adjusted match calculation.
+    """
+    all_skills = []
+
+    for skill_type in ["hard_skills", "soft_skills"]:
+        all_skills.extend(
+            {"term": s["term"], "synonyms": []}
+            for s in master_resume.get("skills", {}).get(skill_type, [])
+        )
+
+    all_keywords = [
+        {"term": k["term"], "synonyms": []}
+        for k in master_resume.get("keywords", [])
+    ]
+
+    return all_skills, all_keywords
+
 
 def filter_and_rank_bullets(master_resume, extract):
     """
