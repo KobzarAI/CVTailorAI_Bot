@@ -388,6 +388,10 @@ def filter_and_rank_bullets(master_resume, extract):
     - optional термины добавляются только после покрытия mandatory
     - структура резюме и связи confirmed_by сохраняются
     """
+    
+    #debug
+    debug_info = {}
+
     # ---------- 1. Подготовка: map термин → root + приоритет ----------
     term_to_root = {}
     priority_map = {}
@@ -404,6 +408,10 @@ def filter_and_rank_bullets(master_resume, extract):
                 term_to_root[syn.lower()] = root
                 if syn.lower() not in priority_map or priority < priority_map[syn.lower()]:
                     priority_map[syn.lower()] = priority
+    
+    #debug
+    debug_info["terms_to_root"] = list(term_to_root)
+    debug_info["priority_map"] = list(priority_map)
 
     # ---------- 2. Подготовка master_resume ----------
     full_skill_pool = {}
@@ -440,6 +448,10 @@ def filter_and_rank_bullets(master_resume, extract):
             bullets_by_company[company_id].append(bullet_copy)
             bullet_to_company[bullet_copy["id"]] = company_id
 
+    #debug
+    debug_info["bullets_by_company"] = copy.deepcopy(bullets_by_company)
+    debug_info["bullet_to_company"] = copy.deepcopy(bullet_to_company)
+
     # ---------- 4. Определяем множества терминов ----------
     mandatory_terms = set(
         term_to_root.get(t.lower(), t) 
@@ -453,6 +465,11 @@ def filter_and_rank_bullets(master_resume, extract):
     resume_terms = set(t.lower() for t in full_skill_pool.keys())
     mandatory_terms = set(t for t in mandatory_terms if t.lower() in resume_terms)
     nice_terms = set(t for t in nice_terms if t.lower() in resume_terms)
+
+    #debug
+    debug_info["resume_terms"] = list(resume_terms)
+    debug_info["mandatory_terms"] = list(mandatory_terms)
+    debug_info["nice_terms"] = list(nice_terms)
 
     # ---------- 5. Комбинаторный выбор буллетов per company ----------
     MAX_TERMS = 25
@@ -472,6 +489,9 @@ def filter_and_rank_bullets(master_resume, extract):
             all_terms = b.get("skills_used", []) + b.get("keyword_used", [])
             bullet_term_map.append((b, set(all_terms)))
 
+        #debug
+        debug_info["bullet_term_map"] = list(bullet_term_map)
+
         # Подбираем комбинации для полного покрытия mandatory
         mandatory_in_company = mandatory_terms.copy()
         best_combo = []
@@ -489,6 +509,10 @@ def filter_and_rank_bullets(master_resume, extract):
                     best_combo = [b for b,_ in combo]
         selected_bullets.extend(best_combo)
         selected_terms.update(best_coverage)
+    
+    #debug
+    debug_info["5.selected_bullets"] = copy.deepcopy(selected_bullets)
+    debug_info["5.selected_terms"] = list(selected_terms)
 
     # ---------- 6. Добавляем nice_to_have термины ----------
     for company_id, bullets in bullets_by_company.items():
@@ -504,6 +528,10 @@ def filter_and_rank_bullets(master_resume, extract):
                 selected_bullets.append(b)
                 selected_terms.update(new_terms)
 
+    #debug
+    debug_info["6.selected_bullets"] = copy.deepcopy(selected_bullets)
+    debug_info["6.selected_terms"] = list(selected_terms)
+
     # ---------- 7. Добавляем optional термины до лимита ----------
     optional_terms = [t for t in resume_terms if t not in selected_terms]
     for term in sorted(optional_terms, key=lambda t: priority_map.get(t.lower(), 1000)):
@@ -511,6 +539,10 @@ def filter_and_rank_bullets(master_resume, extract):
             selected_terms.add(term)
         else:
             break
+
+    #debug
+    debug_info["7.optional_terms"] = list(optional_terms)
+    debug_info["7.selected_terms_and_optional"] = list(selected_terms)
 
     # ---------- 8. Обрезка терминов в буллетах до MAX_TERMS_PER_BULLET ----------
     final_bullets = []
@@ -522,6 +554,9 @@ def filter_and_rank_bullets(master_resume, extract):
             b["keyword_used"] = [t for t in filtered_terms if skill_type_map.get(t.lower()) == "keyword"]
             final_bullets.append(b)
 
+    #debug
+    debug_info["8.final_bullets"] = copy.deepcopy(final_bullets)
+
     # ---------- 9. Сортировка буллетов внутри компаний по важности ----------
     bullets_by_company_final = {}
     for b in final_bullets:
@@ -530,6 +565,9 @@ def filter_and_rank_bullets(master_resume, extract):
             bullets_by_company_final.setdefault(company_id, []).append(b)
     for bullets in bullets_by_company_final.values():
         bullets.sort(key=lambda b: min([priority_map.get(t.lower(), 1000) for t in b.get("skills_used", []) + b.get("keyword_used", [])]) if (b.get("skills_used", []) + b.get("keyword_used", [])) else 1000)
+
+    #debug
+    debug_info["9.bullets_by_company_final"] = copy.deepcopy(bullets_by_company_final)
 
     # ---------- 10. Формируем адаптированные skills и keywords ----------
     adapted_hard = {}
@@ -581,6 +619,9 @@ def filter_and_rank_bullets(master_resume, extract):
 
     if "job_title" in extract:
         adapted_resume["desired_positions"] = [extract["job_title"]]
+
+    #debug
+    adapted_resume["_debug_info"] = debug_info
 
     return adapted_resume
 
