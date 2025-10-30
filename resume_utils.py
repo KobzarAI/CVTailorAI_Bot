@@ -485,75 +485,117 @@ def filter_and_rank_bullets(master_resume, extract):
                     covered_terms.update(bullet_coverage[bullet["id"]])
                     break
 
-    # ---------- 7. Лимиты и фильтрация (релевантные сначала, нерелевантные если есть место) ---------- Перписать однозначно
-    MAX_BULLETS = 25
-    MAX_TERMS_PER_BULLET = 3
+    # ---------- 7. Лимиты и фильтрация (режим resume_aware) ----------
+    MAX_TERMS = 25  # лимит терминов на всё резюме
+    MAX_TERMS_PER_BULLET = 3  # лимит терминов на один буллет
 
-    # сортировка по минимальному приоритету среди терминов в буллете
-    selected_for_coverage.sort(
-        key=lambda b: min(
-            [priority_map.get(t.lower(), 1000) for t in (b.get("skills_used", []) + b.get("keyword_used", []))],
-            default=1000,
-        )
+    # сортируем covered_terms по приоритету (важные сначала)
+    sorted_covered_terms = sorted(
+        covered_terms,
+        key=lambda t: priority_map.get(t.lower(), 1000)
     )
 
-    final_bullets = selected_for_coverage[:MAX_BULLETS]   #берутся только первые 25 буллетов с наивысшим приоритетом - бредятина
+    # выбираем топ-термины для покрытия
+    top_covered_terms = sorted_covered_terms[:MAX_TERMS]
 
-    for b in final_bullets:
-        all_terms = b.get("skills_used", []) + b.get("keyword_used", [])                       #Склеиваем все термины
-        
-        # разделяем на релевантные и нерелевантные
+    # фильтруем буллеты: оставляем только те, где есть хотя бы один термин из топовых
+    filtered_bullets_for_final = []
+    for b in selected_for_coverage:
+        used_terms = b.get("skills_used", []) + b.get("keyword_used", [])
+        if any(t in top_covered_terms for t in used_terms):
+            filtered_bullets_for_final.append(b)
+
+    # учёт частоты терминов (для ограничения повторов и разнообразия)
+    term_usage_count = {}
+    final_bullets = []
+
+    for b in filtered_bullets_for_final:
+        all_terms = b.get("skills_used", []) + b.get("keyword_used", [])
+
+        # делим на релевантные и нерелевантные
         relevant_terms = [t for t in all_terms if t in mandatory_terms or t in nice_terms]
         non_relevant_terms = [t for t in all_terms if t not in relevant_terms]
-        
-        # сортировка релевантных и нерелевантных по приоритету
+
+        # сортировка по приоритету (1–3 → важные, 1000 → прочие)
         relevant_terms_sorted = sorted(relevant_terms, key=lambda t: priority_map.get(t.lower(), 1000))
         non_relevant_terms_sorted = sorted(non_relevant_terms, key=lambda t: priority_map.get(t.lower(), 1000))
-        
-        # берём сначала релевантные, потом дополняем нерелевантными до лимита
-        trimmed_terms = relevant_terms_sorted[:MAX_TERMS_PER_BULLET]
-        if len(trimmed_terms) < MAX_TERMS_PER_BULLET:
-            remaining_slots = MAX_TERMS_PER_BULLET - len(trimmed_terms)
-            trimmed_terms += non_relevant_terms_sorted[:remaining_slots]
-        
-        # распределяем по хард/софт/кейвордс
-        b["skills_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) in ["hard", "soft"]] #перетираем скил юзед скилами из топ 3
-        b["keyword_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) == "keyword"] #перетираем кейвордами из топ 3
+
+        trimmed_terms = []
+        for t in relevant_terms_sorted + non_relevant_terms_sorted:
+            term_l = t.lower()
+            prio = priority_map.get(term_l, 1000)
+
+            # лимиты повторов по приоритету
+            if prio in (1, 2):
+                limit = 2   # mandatory — разрешаем 2 упоминания
+            else:
+                limit = 1   # nice-to-have и прочие — по одному разу
+
+            if term_usage_count.get(term_l, 0) < limit:
+                trimmed_terms.append(t)
+                term_usage_count[term_l] = term_usage_count.get(term_l, 0) + 1
+
+            # прерываем, если достигнут лимит терминов на буллет
+            if len(trimmed_terms) >= MAX_TERMS_PER_BULLET:
+                break
+
+        # распределяем по типам (skills / keywords)
+        b["skills_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) in ["hard", "soft"]]
+        b["keyword_used"] = [t for t in trimmed_terms if skill_type_map.get(t.lower()) == "keyword"]
+
+        # добавляем буллет, только если в нём остались термины
+        if b["skills_used"] or b["keyword_used"]:
+            final_bullets.append(b)
 
     # ---------- 8. Формирование адаптированных скилов ----------
     adapted_hard = {}
     adapted_soft = {}
     adapted_keywords = {}
 
-    for b in final_bullets:         #Идя по буллетам, создает скилы и кейворды, в пока внутренних списках с конфирмами (буллет на котором стоит)
+    for b in final_bullets:
         b_id = b["id"]
-        for t in b.get("skills_used", []):
-            term_l = t.lower()
-            root = term_to_root.get(term_l, t)
-            base_skill = full_skill_pool.get(root.lower())
-            origin_flag = origin_map.get(term_l, False)
-            skill_type = skill_type_map.get(term_l) or (base_skill and skill_type_map.get(base_skill["term"].lower()))
+        used_terms = b.get("skills_used", []) + b.get("keyword_used", [])
 
+        for t in used_terms:
+            term_l = t.lower()
+
+            # нормализуем до root (если это был синоним)
+            root = term_to_root.get(term_l, t)
+            root_l = root.lower()
+
+            # пробуем взять исходный объект из full_skill_pool
+            base_entry = full_skill_pool.get(root_l)
+            if not base_entry:
+                # если нет в full_skill_pool, пропускаем (такого быть почти не должно)
+                continue
+
+            origin_flag = base_entry.get("origin", False)
+            skill_type = skill_type_map.get(root_l)
+
+            if not skill_type:
+                # если по какой-то причине тип не найден — пропускаем
+                continue
+
+            # выбираем куда класть (hard / soft / keyword)
             if skill_type == "hard":
-                adapted_hard.setdefault(root, {"term": root, "confirmed_by": [], "origin": origin_flag})
-                if b_id not in adapted_hard[root]["confirmed_by"]:
-                    adapted_hard[root]["confirmed_by"].append(b_id)
+                target_dict = adapted_hard
             elif skill_type == "soft":
-                adapted_soft.setdefault(root, {"term": root, "confirmed_by": [], "origin": origin_flag})
-                if b_id not in adapted_soft[root]["confirmed_by"]:
-                    adapted_soft[root]["confirmed_by"].append(b_id)
-        for t in b.get("keyword_used", []):
-            term_l = t.lower()
-            root = term_to_root.get(term_l, t)
-            origin_flag = origin_map.get(term_l, False)
-            adapted_keywords.setdefault(root, {"term": root, "confirmed_by": [], "origin": origin_flag})
-            if b_id not in adapted_keywords[root]["confirmed_by"]:
-                adapted_keywords[root]["confirmed_by"].append(b_id)
+                target_dict = adapted_soft
+            elif skill_type == "keyword":
+                target_dict = adapted_keywords
+            else:
+                continue  # неизвестный тип — пропускаем
 
-    for term in mandatory_terms:
-        if term.lower() not in adapted_hard and term.lower() in full_skill_pool:  #долбоебизм, но если обязательный термин не в хардах, то заносит его в харды, и плевать если он есть в софтах
-            s = full_skill_pool[term.lower()]
-            adapted_hard[term] = {"term": term, "confirmed_by": [], "origin": s.get("origin", False)}
+            # добавляем или обновляем запись
+            if root not in target_dict:
+                target_dict[root] = {
+                    "term": root,
+                    "confirmed_by": [],
+                    "origin": origin_flag
+                }
+
+            if b_id not in target_dict[root]["confirmed_by"]:
+                target_dict[root]["confirmed_by"].append(b_id)
 
     # ---------- 9. Очистка ----------
     valid_terms = set(list(adapted_hard.keys()) + list(adapted_soft.keys()) + list(adapted_keywords.keys()))
