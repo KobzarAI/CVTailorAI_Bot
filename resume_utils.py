@@ -463,19 +463,49 @@ def filter_and_rank_bullets(master_resume, extract):
     bullets_by_company = {}
     bullet_to_company = {}
     bullet_index = {}  # id -> bullet object
+
+    def unique_preserve_order(seq):
+        """Удаляет дубликаты, сохраняя порядок появления"""
+        seen = set()
+        out = []
+        for x in seq:
+            if x not in seen:
+                seen.add(x)
+                out.append(x)
+        return out
+
     # сохраняем порядок компаний индексами
     for idx, exp in enumerate(master_resume.get("experience", [])):
         company_key = idx
         bullets_by_company.setdefault(company_key, [])
+
         for b in exp.get("bullets", []):
             bullet_copy = copy.deepcopy(b)
-            bullet_copy["skills_used"] = [term_to_root.get(t.lower(), t) for t in b.get("skills_used", [])]
-            bullet_copy["keyword_used"] = [term_to_root.get(k.lower(), k) for k in b.get("keyword_used", [])]
+
+            # нормализуем и удаляем дубликаты
+            bullet_copy["skills_used"] = unique_preserve_order([
+                term_to_root.get(t.lower(), t)
+                for t in b.get("skills_used", [])
+            ])
+            bullet_copy["keyword_used"] = unique_preserve_order([
+                term_to_root.get(k.lower(), k)
+                for k in b.get("keyword_used", [])
+            ])
+
             bullets_by_company[company_key].append(bullet_copy)
+
             bid = bullet_copy.get("id")
             if bid is not None:
                 bullet_to_company[bid] = company_key
                 bullet_index[bid] = bullet_copy
+
+            # debug: если были удалены дубликаты, зафиксировать
+            if len(bullet_copy["skills_used"]) != len(set(bullet_copy["skills_used"])) \
+               or len(bullet_copy["keyword_used"]) != len(set(bullet_copy["keyword_used"])):
+                debug_log(debug_info,
+                          f"dup_removed_in_bullet_{bid}",
+                          {"skills_used": bullet_copy["skills_used"],
+                           "keyword_used": bullet_copy["keyword_used"]})
 
     # ---------- 4. Определяем множества терминов ----------
     mandatory_terms = set(
