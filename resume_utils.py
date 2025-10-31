@@ -483,16 +483,26 @@ def filter_and_rank_bullets(master_resume, extract):
     # ---------- 3. Извлечение и нормализация буллетов ----------
     bullets_by_company = {}
     bullet_to_company = {}
-    for exp in master_resume.get("experience", []):
-        company_id = exp.get("company_id")
-        if company_id not in bullets_by_company:
-            bullets_by_company[company_id] = []
+
+    for idx, exp in enumerate(master_resume.get("experience", [])):
+        # Используем порядковый номер компании в experience как идентификатор
+        company_key = idx
+        if company_key not in bullets_by_company:
+            bullets_by_company[company_key] = []
+
         for b in exp.get("bullets", []):
             bullet_copy = copy.deepcopy(b)
-            bullet_copy["skills_used"] = [term_to_root.get(t.lower(), t) for t in b.get("skills_used", [])]
-            bullet_copy["keyword_used"] = [term_to_root.get(k.lower(), k) for k in b.get("keyword_used", [])]
-            bullets_by_company[company_id].append(bullet_copy)
-            bullet_to_company[bullet_copy["id"]] = company_id
+
+            # нормализуем термины через term_to_root
+            bullet_copy["skills_used"] = [
+                term_to_root.get(t.lower(), t) for t in b.get("skills_used", [])
+            ]
+            bullet_copy["keyword_used"] = [
+                term_to_root.get(k.lower(), k) for k in b.get("keyword_used", [])
+            ]
+
+            bullets_by_company[company_key].append(bullet_copy)
+            bullet_to_company[bullet_copy["id"]] = company_key
 
     #debug
     #записываем только идентификаторы буллетов и их terms (без вложенных несериализуемых типов)
@@ -529,9 +539,11 @@ def filter_and_rank_bullets(master_resume, extract):
     selected_bullets = []
 
     # Сначала гарантируем покрытие всех mandatory
-    for company_id, bullets in bullets_by_company.items():
-        # лимит по компании
-        duration_years = next((exp.get("duration_years", 0) for exp in master_resume.get("experience", []) if exp.get("company_id")==company_id), 0)
+    for company_key, bullets in bullets_by_company.items():
+        duration_years = next(
+            (exp.get("duration_years", 0) for i, exp in enumerate(master_resume.get("experience", []))
+            if i == company_key), 
+            0)
         company_cap = ceil(duration_years) + 1 if duration_years - floor(duration_years) >= 0.5 else floor(duration_years) + 1
 
         bullet_term_map = []
@@ -611,9 +623,9 @@ def filter_and_rank_bullets(master_resume, extract):
     # ---------- 9. Сортировка буллетов внутри компаний по важности ----------
     bullets_by_company_final = {}
     for b in final_bullets:
-        company_id = bullet_to_company.get(b["id"])
-        if company_id is not None:
-            bullets_by_company_final.setdefault(company_id, []).append(b)
+        company_key = bullet_to_company.get(b["id"])
+        if company_key is not None:
+            bullets_by_company_final.setdefault(company_key, []).append(b)
     for bullets in bullets_by_company_final.values():
         bullets.sort(key=lambda b: min([priority_map.get(t.lower(), 1000) for t in b.get("skills_used", []) + b.get("keyword_used", [])]) if (b.get("skills_used", []) + b.get("keyword_used", [])) else 1000)
 
