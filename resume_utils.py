@@ -838,17 +838,35 @@ def filter_and_rank_bullets(master_resume, extract):
             company["bullets"] = filtered_bullets
             restored_experience.append(company)
 
-    # ---------- 12. Формируем итог ----------
+    # ---------- 12. Формируем итог с сортировкой по приоритету ----------
     adapted_resume = copy.deepcopy(master_resume)
+
+    def sort_adapted_terms(adapted_dict):
+        """
+        Сортирует термины по приоритету: сначала термины из экстракта по убыванию важности,
+        затем опциональные термины, которых нет в экстракте.
+        """
+        def term_priority(item):
+            term_l = item["term"].lower()
+            return priority_map.get(term_l, 1000)  # 1000+ для опциональных
+        return sorted(adapted_dict.values(), key=term_priority)
+
     adapted_resume["skills"] = {
-        "hard_skills": list(adapted_hard.values()),
-        "soft_skills": list(adapted_soft.values())
+        "hard_skills": sort_adapted_terms(adapted_hard),
+        "soft_skills": sort_adapted_terms(adapted_soft)
     }
-    adapted_resume["keywords"] = list(adapted_keywords.values())
+    adapted_resume["keywords"] = sort_adapted_terms(adapted_keywords)
     adapted_resume["experience"] = restored_experience
 
     if "job_title" in extract:
         adapted_resume["desired_positions"] = [extract["job_title"]]
+
+    # debug
+    adapted_resume["_debug_info"]["12.sorted_skills_and_keywords"] = {
+        "hard_skills": [s["term"] for s in adapted_resume["skills"]["hard_skills"]],
+        "soft_skills": [s["term"] for s in adapted_resume["skills"]["soft_skills"]],
+        "keywords": [k["term"] for k in adapted_resume["keywords"]]
+    }
 
     return adapted_resume
 
