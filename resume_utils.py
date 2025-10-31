@@ -465,7 +465,7 @@ def filter_and_rank_bullets(master_resume, extract):
     bullet_index = {}  # id -> bullet object
 
     def unique_preserve_order(seq):
-        """Удаляет дубликаты, сохраняя порядок появления"""
+        """Удаляет дубликаты, сохраняя порядок появления."""
         seen = set()
         out = []
         for x in seq:
@@ -482,15 +482,53 @@ def filter_and_rank_bullets(master_resume, extract):
         for b in exp.get("bullets", []):
             bullet_copy = copy.deepcopy(b)
 
-            # нормализуем и удаляем дубликаты
-            bullet_copy["skills_used"] = unique_preserve_order([
-                term_to_root.get(t.lower(), t)
-                for t in b.get("skills_used", [])
-            ])
-            bullet_copy["keyword_used"] = unique_preserve_order([
-                term_to_root.get(k.lower(), k)
-                for k in b.get("keyword_used", [])
-            ])
+            # Сохраним оригинальные (до нормализации) множества для принятия решения о том, куда вернуть термин
+            orig_skills = [s for s in b.get("skills_used", [])]
+            orig_keywords = [k for k in b.get("keyword_used", [])]
+
+            # Нормализуем термины (синонимы -> root)
+            norm_skills = [term_to_root.get(t.lower(), t) for t in orig_skills]
+            norm_keywords = [term_to_root.get(k.lower(), k) for k in orig_keywords]
+
+            # Объединяем списки в порядке появления: сначала нормализованные skills, затем keywords
+            # (сохраняем порядок появления внутри каждой секции)
+            merged = norm_skills + norm_keywords
+
+            # Дедупликация по порядку: если термин встречается и в skills, и в keywords,
+            # он останется в той секции, где был изначально (мы помним orig_skills/orig_keywords)
+            deduped = []
+            seen = set()
+
+            # Для быстрого определения: множества нормализованных исходных секций
+            norm_skills_set = set(norm_skills)
+            norm_keywords_set = set(norm_keywords)
+
+            for term in merged:
+                if term in seen:
+                    continue
+                seen.add(term)
+                deduped.append(term)
+
+            # Теперь распределяем обратно: предпочитаем skills, затем keywords
+            new_skills = []
+            new_keywords = []
+
+            for term in deduped:
+                # если исходно этот нормализованный термин был в skills (в orig_skills mapped),
+                # то положим его в skills; иначе — в keywords
+                if term in norm_skills_set:
+                    new_skills.append(term)
+                elif term in norm_keywords_set:
+                    new_keywords.append(term)
+                else:
+                    # редкий случай: термин появился в merged, но не попал в ни одну из исходных нормализованных множеств
+                    # (например, нормализация создала root, который не был в orig lists) — в таком случае
+                    # логично положить его в skills по умолчанию (или в keywords, если хочешь)
+                    new_skills.append(term)
+
+            # Сохраняем в копии буллета
+            bullet_copy["skills_used"] = unique_preserve_order(new_skills)
+            bullet_copy["keyword_used"] = unique_preserve_order(new_keywords)
 
             bullets_by_company[company_key].append(bullet_copy)
 
@@ -499,13 +537,18 @@ def filter_and_rank_bullets(master_resume, extract):
                 bullet_to_company[bid] = company_key
                 bullet_index[bid] = bullet_copy
 
-            # debug: если были удалены дубликаты, зафиксировать
-            if len(bullet_copy["skills_used"]) != len(set(bullet_copy["skills_used"])) \
-               or len(bullet_copy["keyword_used"]) != len(set(bullet_copy["keyword_used"])):
+            # debug: если длины до/после различаются — значит произошла дедупликация между секциями
+            if (len(norm_skills) + len(norm_keywords)) != (len(bullet_copy["skills_used"]) + len(bullet_copy["keyword_used"])):
                 debug_log(debug_info,
-                          f"dup_removed_in_bullet_{bid}",
-                          {"skills_used": bullet_copy["skills_used"],
-                           "keyword_used": bullet_copy["keyword_used"]})
+                        f"dup_split_removed_in_bullet_{bid}",
+                        {
+                            "orig_skills": orig_skills,
+                            "orig_keywords": orig_keywords,
+                            "norm_skills": norm_skills,
+                            "norm_keywords": norm_keywords,
+                            "after_skills": bullet_copy["skills_used"],
+                            "after_keywords": bullet_copy["keyword_used"],
+                        }, as_text=True, limit=2000)
 
     # ---------- 4. Определяем множества терминов ----------
     mandatory_terms = set(
