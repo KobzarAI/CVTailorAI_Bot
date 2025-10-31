@@ -537,14 +537,19 @@ def filter_and_rank_bullets(master_resume, extract):
 
     selected_terms = set()
     selected_bullets = []
+    company_caps = {}  # <-- объявляем здесь, чтобы потом использовать в шаге 6
 
     # Сначала гарантируем покрытие всех mandatory
     for company_key, bullets in bullets_by_company.items():
+        # вычисляем лимит по компании
         duration_years = next(
-            (exp.get("duration_years", 0) for i, exp in enumerate(master_resume.get("experience", []))
-            if i == company_key), 
-            0)
+            (exp.get("duration_years", 0)
+             for i, exp in enumerate(master_resume.get("experience", []))
+             if i == company_key),
+            0
+        )
         company_cap = ceil(duration_years) + 1 if duration_years - floor(duration_years) >= 0.5 else floor(duration_years) + 1
+        company_caps[company_key] = company_cap  # сохраняем лимит
 
         bullet_term_map = []
         for b in bullets:
@@ -554,7 +559,6 @@ def filter_and_rank_bullets(master_resume, extract):
         # debug
         safe_btm = [{"id": b.get("id"), "terms": sorted(list(terms))} for b, terms in bullet_term_map]
         debug_log(debug_info, f"company_{company_key}_bullet_term_map_safe", safe_btm, head=200)
-
 
         # Подбираем комбинации для полного покрытия mandatory
         mandatory_in_company = mandatory_terms.copy()
@@ -567,24 +571,26 @@ def filter_and_rank_bullets(master_resume, extract):
                     combo_terms.update(b.get("skills_used", []) + b.get("keyword_used", []))
                 coverage_terms = combo_terms & mandatory_in_company
                 if len(coverage_terms) > len(best_coverage):
-                    best_combo = [b for b,_ in combo]
+                    best_combo = [b for b, _ in combo]
                     best_coverage = coverage_terms
                 elif len(coverage_terms) == len(best_coverage) and len(combo) < len(best_combo):
-                    best_combo = [b for b,_ in combo]
+                    best_combo = [b for b, _ in combo]
         selected_bullets.extend(best_combo)
         selected_terms.update(best_coverage)
-    
-    #debug
+
+    # debug
     debug_log(debug_info, "5.selected_bullets_ids", [b.get("id") for b in selected_bullets])
     debug_log(debug_info, "5.selected_terms", sorted(list(selected_terms)))
+    debug_log(debug_info, "5.company_caps", company_caps)
 
     # ---------- 6. Добавляем nice_to_have термины ----------
     for company_key, bullets in bullets_by_company.items():
         bullet_term_map = [(b, set(b.get("skills_used", []) + b.get("keyword_used", []))) for b in bullets]
+        company_cap = company_caps.get(company_key, 1)  # безопасное извлечение
         for b, terms in bullet_term_map:
             if b in selected_bullets:
                 continue
-            if len(selected_bullets) >= company_caps[company_key]:  # используем соответствующий лимит
+            if len(selected_bullets) >= company_cap:
                 break
             # добавляем буллет, если содержит новый nice_to_have термин
             new_terms = terms & nice_terms - selected_terms
@@ -592,7 +598,7 @@ def filter_and_rank_bullets(master_resume, extract):
                 selected_bullets.append(b)
                 selected_terms.update(new_terms)
 
-    #debug
+    # debug
     debug_log(debug_info, "6.selected_bullets_ids", [b.get("id") for b in selected_bullets])
     debug_log(debug_info, "6.selected_terms", sorted(list(selected_terms)))
 
