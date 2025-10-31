@@ -551,9 +551,10 @@ def filter_and_rank_bullets(master_resume, extract):
             all_terms = b.get("skills_used", []) + b.get("keyword_used", [])
             bullet_term_map.append((b, set(all_terms)))
 
-        #debug
-        safe_btm = [ {"id": b.get("id"), "terms": sorted(list(terms))} for b, terms in bullet_term_map ]
-        debug_log(debug_info, f"company_{company_id}_bullet_term_map_safe", safe_btm, head=200)
+        # debug
+        safe_btm = [{"id": b.get("id"), "terms": sorted(list(terms))} for b, terms in bullet_term_map]
+        debug_log(debug_info, f"company_{company_key}_bullet_term_map_safe", safe_btm, head=200)
+
 
         # Подбираем комбинации для полного покрытия mandatory
         mandatory_in_company = mandatory_terms.copy()
@@ -578,12 +579,12 @@ def filter_and_rank_bullets(master_resume, extract):
     debug_log(debug_info, "5.selected_terms", sorted(list(selected_terms)))
 
     # ---------- 6. Добавляем nice_to_have термины ----------
-    for company_id, bullets in bullets_by_company.items():
+    for company_key, bullets in bullets_by_company.items():
         bullet_term_map = [(b, set(b.get("skills_used", []) + b.get("keyword_used", []))) for b in bullets]
         for b, terms in bullet_term_map:
             if b in selected_bullets:
                 continue
-            if len(selected_bullets) >= company_cap:
+            if len(selected_bullets) >= company_caps[company_key]:  # используем соответствующий лимит
                 break
             # добавляем буллет, если содержит новый nice_to_have термин
             new_terms = terms & nice_terms - selected_terms
