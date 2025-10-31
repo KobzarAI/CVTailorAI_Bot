@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 import json
-from collections import Counter
+from collections import defaultdict, Counter
 import copy
 from itertools import combinations
 from math import floor, ceil
