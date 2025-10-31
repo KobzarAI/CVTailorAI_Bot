@@ -381,20 +381,16 @@ def gather_all_current_terms(master_resume):
 
 
 def _make_serializable(obj):
-    """Рекурсивно преобразует объект к JSON-сериализуемому виду:
-       - set/tuple -> list
-       - dict/list -> рекурсивно
-       - прочие типы: оставляет, если сериализуемы, иначе строку repr"""
+    """Рекурсивный перевод в JSON-сериализуемую структуру."""
     if isinstance(obj, dict):
         return {str(k): _make_serializable(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_make_serializable(v) for v in obj]
     if isinstance(obj, set):
+        # сортируем для детерминированности
         return [_make_serializable(v) for v in sorted(obj, key=lambda x: str(x))]
-    # примитивы (int/float/str/bool/None)
     if isinstance(obj, (str, int, float, bool)) or obj is None:
         return obj
-    # fallback: попытка сериализации через json, иначе repr
     try:
         json.dumps(obj)
         return obj
@@ -402,15 +398,9 @@ def _make_serializable(obj):
         return repr(obj)
 
 def debug_log(debug_info, name, obj, as_text=False, head=None, limit=None):
-    """
-    Безопасно записывает снимок obj в debug_info[name].
-    - as_text=True -> сохранит prettified JSON-строку
-    - head=N -> если obj — список/iterable, сохранит только первые N элементов
-    - limit -> ограничение длины строки при as_text
-    """
+    """Безопасно кладёт снимок obj в debug_info[name]."""
     try:
         snapshot = copy.deepcopy(obj)
-        # если надо взять только head элементов
         if head is not None and isinstance(snapshot, (list, tuple, set)):
             snapshot = list(snapshot)[:head]
         serial = _make_serializable(snapshot)
@@ -427,14 +417,10 @@ def debug_log(debug_info, name, obj, as_text=False, head=None, limit=None):
 
 def filter_and_rank_bullets(master_resume, extract):
     """
-    Адаптирует резюме под вакансию, гарантируя:
-    - обязательные термины из экстракта, которые есть в резюме, сохраняются
-    - выбираются буллеты для покрытия максимального числа терминов при лимитах per-company и per-bullet
-    - optional термины добавляются только после покрытия mandatory
-    - структура резюме и связи confirmed_by сохраняются
+    Совместимая версия filter_and_rank_bullets с улучшенным алгоритмом выбора буллетов.
+    Сохраняет входные/выходные структуры, добавляет подробный debug.
     """
-    
-    #debug
+    # debug
     debug_info = {}
 
     # ---------- 1. Подготовка: map термин → root + приоритет ----------
@@ -445,19 +431,12 @@ def filter_and_rank_bullets(master_resume, extract):
         for item in extract.get(group, []):
             root = item["term"]
             priority = item.get("priority", 1000)
-
             term_to_root[root.lower()] = root
             priority_map[root.lower()] = priority
-
             for syn in item.get("synonyms", []):
                 term_to_root[syn.lower()] = root
                 if syn.lower() not in priority_map or priority < priority_map[syn.lower()]:
                     priority_map[syn.lower()] = priority
-    
-    #debug
-    debug_log(debug_info, "terms_to_root_keys", list(term_to_root.keys()))
-    debug_log(debug_info, "priority_map", {k: priority_map[k] for k in sorted(priority_map.keys())}, head=100)
-
 
     # ---------- 2. Подготовка master_resume ----------
     full_skill_pool = {}
@@ -483,161 +462,325 @@ def filter_and_rank_bullets(master_resume, extract):
     # ---------- 3. Извлечение и нормализация буллетов ----------
     bullets_by_company = {}
     bullet_to_company = {}
-
+    bullet_index = {}  # id -> bullet object
+    # сохраняем порядок компаний индексами
     for idx, exp in enumerate(master_resume.get("experience", [])):
-        # Используем порядковый номер компании в experience как идентификатор
         company_key = idx
-        if company_key not in bullets_by_company:
-            bullets_by_company[company_key] = []
-
+        bullets_by_company.setdefault(company_key, [])
         for b in exp.get("bullets", []):
             bullet_copy = copy.deepcopy(b)
-
-            # нормализуем термины через term_to_root
-            bullet_copy["skills_used"] = [
-                term_to_root.get(t.lower(), t) for t in b.get("skills_used", [])
-            ]
-            bullet_copy["keyword_used"] = [
-                term_to_root.get(k.lower(), k) for k in b.get("keyword_used", [])
-            ]
-
+            bullet_copy["skills_used"] = [term_to_root.get(t.lower(), t) for t in b.get("skills_used", [])]
+            bullet_copy["keyword_used"] = [term_to_root.get(k.lower(), k) for k in b.get("keyword_used", [])]
             bullets_by_company[company_key].append(bullet_copy)
-            bullet_to_company[bullet_copy["id"]] = company_key
-
-    #debug
-    #записываем только идентификаторы буллетов и их terms (без вложенных несериализуемых типов)
-    safe_bullets_by_company = {cid: [{ "id": b.get("id"), "terms": list(b.get("skills_used",[])+b.get("keyword_used",[])) } 
-                                    for b in bullets]
-                               for cid, bullets in bullets_by_company.items()}
-    debug_log(debug_info, "bullets_by_company_safe", safe_bullets_by_company, as_text=True, limit=2000)
-    debug_log(debug_info, "bullet_to_company", bullet_to_company)
+            bid = bullet_copy.get("id")
+            if bid is not None:
+                bullet_to_company[bid] = company_key
+                bullet_index[bid] = bullet_copy
 
     # ---------- 4. Определяем множества терминов ----------
     mandatory_terms = set(
-        term_to_root.get(t.lower(), t) 
+        term_to_root.get(t.lower(), t)
         for t in (extract.get("mandatory", {}).get("skills", []) + extract.get("mandatory", {}).get("keywords", []))
     )
     nice_terms = set(
-        term_to_root.get(t.lower(), t) 
+        term_to_root.get(t.lower(), t)
         for t in (extract.get("nice_to_have", {}).get("skills", []) + extract.get("nice_to_have", {}).get("keywords", []))
     )
-    # термины реально встречающиеся в резюме
     resume_terms = set(t.lower() for t in full_skill_pool.keys())
     mandatory_terms = set(t for t in mandatory_terms if t.lower() in resume_terms)
     nice_terms = set(t for t in nice_terms if t.lower() in resume_terms)
 
-    #debug
-    debug_log(debug_info, "resume_terms", sorted(list(resume_terms)))
-    debug_log(debug_info, "mandatory_terms", sorted(list(mandatory_terms)))
-    debug_log(debug_info, "nice_terms", sorted(list(nice_terms)))
+    debug_log(debug_info, "4.resume_terms", sorted(list(resume_terms)))
+    debug_log(debug_info, "4.mandatory_terms", sorted(list(mandatory_terms)))
+    debug_log(debug_info, "4.nice_terms", sorted(list(nice_terms)))
 
-    # ---------- 5. Комбинаторный выбор буллетов per company ----------
+    # ---------- PREP: flatten bullets and build term->bullets map ----------
+    all_bullets = []          # list of bullet dicts (objects)
+    all_bullet_ids = []       # list of bullet ids in same order
+    term_to_bullets = defaultdict(set)  # term(root) -> set(bullet_id)
+    for company_key, bullets in bullets_by_company.items():
+        for b in bullets:
+            bid = b.get("id")
+            if bid is None:
+                continue
+            all_bullets.append(b)
+            all_bullet_ids.append(bid)
+            terms = b.get("skills_used", []) + b.get("keyword_used", [])
+            for t in terms:
+                term_to_bullets[t].add(bid)
+
+    # debug safe snapshot
+    safe_bullets = {cid: [{"id": bb.get("id"), "terms": list(bb.get("skills_used", []) + bb.get("keyword_used", []))} for bb in blist] for cid, blist in bullets_by_company.items()}
+    debug_log(debug_info, "5a.bullets_by_company_safe", safe_bullets, as_text=True, limit=3000)
+
+    # ---------- PHASE A: weight model and candidate collection ----------
     MAX_TERMS = 25
     MAX_TERMS_PER_BULLET = 3
 
-    selected_terms = set()
-    selected_bullets = []
-    company_caps = {}  # <-- объявляем здесь, чтобы потом использовать в шаге 6
+    # compute term weights
+    priority_weight = {}
+    for t in set(list(term_to_bullets.keys())) | mandatory_terms | nice_terms:
+        tl = t.lower()
+        if t in mandatory_terms or tl in (x.lower() for x in mandatory_terms):
+            pw = 3
+        elif t in nice_terms or tl in (x.lower() for x in nice_terms):
+            pw = 2
+        else:
+            pw = 1
+        priority_weight[t] = pw
 
-    # Сначала гарантируем покрытие всех mandatory
-    for company_key, bullets in bullets_by_company.items():
-        # вычисляем лимит по компании
-        duration_years = next(
-            (exp.get("duration_years", 0)
-             for i, exp in enumerate(master_resume.get("experience", []))
-             if i == company_key),
-            0
-        )
-        company_cap = ceil(duration_years) + 1 if duration_years - floor(duration_years) >= 0.5 else floor(duration_years) + 1
-        company_caps[company_key] = company_cap  # сохраняем лимит
+    term_count = {t: max(1, len(term_to_bullets.get(t, []))) for t in set(priority_weight.keys())}
+    rarity_weight = {t: 1.0 / term_count[t] for t in term_count}
 
-        bullet_term_map = []
-        for b in bullets:
-            all_terms = b.get("skills_used", []) + b.get("keyword_used", [])
-            bullet_term_map.append((b, set(all_terms)))
+    alpha = 1.0
+    beta = 0.5
 
-        # debug
-        safe_btm = [{"id": b.get("id"), "terms": sorted(list(terms))} for b, terms in bullet_term_map]
-        debug_log(debug_info, f"company_{company_key}_bullet_term_map_safe", safe_btm, head=200)
+    term_weight = {t: alpha * priority_weight.get(t, 1) + beta * rarity_weight.get(t, 0) for t in priority_weight}
 
-        # Подбираем комбинации для полного покрытия mandatory
-        mandatory_in_company = mandatory_terms.copy()
-        best_combo = []
-        best_coverage = set()
-        for r in range(1, min(company_cap, len(bullet_term_map)) + 1):
-            for combo in combinations(bullet_term_map, r):
-                combo_terms = set()
-                for b, _ in combo:
-                    combo_terms.update(b.get("skills_used", []) + b.get("keyword_used", []))
-                coverage_terms = combo_terms & mandatory_in_company
-                if len(coverage_terms) > len(best_coverage):
-                    best_combo = [b for b, _ in combo]
-                    best_coverage = coverage_terms
-                elif len(coverage_terms) == len(best_coverage) and len(combo) < len(best_combo):
-                    best_combo = [b for b, _ in combo]
-        selected_bullets.extend(best_combo)
-        selected_terms.update(best_coverage)
+    # compute bullet weights
+    bullet_weight = {}
+    for bid in all_bullet_ids:
+        b = bullet_index[bid]
+        terms = b.get("skills_used", []) + b.get("keyword_used", [])
+        w = sum(term_weight.get(t, 0) for t in terms)
+        # penalty for too many terms (soft)
+        if len(terms) > MAX_TERMS_PER_BULLET:
+            gamma = 0.06
+            w *= (1 - gamma * (len(terms) - MAX_TERMS_PER_BULLET))
+        bullet_weight[bid] = w
 
-    # debug
-    debug_log(debug_info, "5.selected_bullets_ids", [b.get("id") for b in selected_bullets])
-    debug_log(debug_info, "5.selected_terms", sorted(list(selected_terms)))
-    debug_log(debug_info, "5.company_caps", company_caps)
+    # debug weight model
+    debug_log(debug_info, "5a.term_weight_sample", {t: term_weight[t] for i,t in enumerate(sorted(term_weight.keys())[:200])}, head=200)
+    debug_log(debug_info, "5a.bullet_weight_sample", {bid: bullet_weight[bid] for bid in list(bullet_weight.keys())[:200]})
 
-    # ---------- 6. Добавляем nice_to_have термины ----------
-    for company_key, bullets in bullets_by_company.items():
-        bullet_term_map = [(b, set(b.get("skills_used", []) + b.get("keyword_used", []))) for b in bullets]
-        company_cap = company_caps.get(company_key, 1)  # безопасное извлечение
-        for b, terms in bullet_term_map:
-            if b in selected_bullets:
-                continue
-            if len(selected_bullets) >= company_cap:
-                break
-            # добавляем буллет, если содержит новый nice_to_have термин
-            new_terms = terms & nice_terms - selected_terms
-            if new_terms:
-                selected_bullets.append(b)
-                selected_terms.update(new_terms)
+    # A3: collect candidate bullets for mandatory (not finalizing removal)
+    candidate_bullets = set()
+    for t in mandatory_terms:
+        candidates = term_to_bullets.get(t, set())
+        if not candidates:
+            continue
+        max_w = max(bullet_weight.get(bid, 0) for bid in candidates)
+        threshold = 0.7 * max_w if max_w > 0 else 0
+        # add bullets close to max weight to keep alternatives
+        for bid in candidates:
+            if bullet_weight.get(bid, 0) >= threshold:
+                candidate_bullets.add(bid)
 
-    # debug
-    debug_log(debug_info, "6.selected_bullets_ids", [b.get("id") for b in selected_bullets])
-    debug_log(debug_info, "6.selected_terms", sorted(list(selected_terms)))
+    debug_log(debug_info, "5a.mandatory_candidate_bullets", sorted(list(candidate_bullets)))
 
-    # ---------- 7. Добавляем optional термины до лимита ----------
-    optional_terms = [t for t in resume_terms if t not in selected_terms]
-    for term in sorted(optional_terms, key=lambda t: priority_map.get(t.lower(), 1000)):
-        if len(selected_terms) < MAX_TERMS:
-            selected_terms.add(term)
+    # A4: try to add bullets to cover nice_terms (and extend candidate pool)
+    # we prefer bullets that add most NEW term_weight
+    selected_bullet_ids = set(candidate_bullets)
+    selected_term_set = set()
+    for bid in list(selected_bullet_ids):
+        b = bullet_index[bid]
+        selected_term_set.update(b.get("skills_used", []) + b.get("keyword_used", []))
+    # Add nice -> choose bullets that bring new coverage by weighted gain
+    def weighted_gain_for_bullet(bid, current_terms):
+        b = bullet_index[bid]
+        terms = b.get("skills_used", []) + b.get("keyword_used", [])
+        gain = sum(term_weight.get(t, 0) for t in terms if t not in current_terms)
+        return gain
+
+    # candidate pool initially contains mandatory candidates + all bullets that contain at least one mandatory or nice term
+    for t in nice_terms:
+        for bid in term_to_bullets.get(t, []):
+            candidate_bullets.add(bid)
+
+    # greedy add from candidate_bullets to improve coverage until reach MAX_TERMS or no gain
+    all_candidate_list = set(candidate_bullets) | set(all_bullet_ids)
+    # but limit to not explode: keep all bullets that contain any term in mandatory/nice/first-k optional
+    # get optional candidates sample
+    optional_pool = [t for t in resume_terms if t not in mandatory_terms and t not in nice_terms]
+    optional_sample_terms = set(optional_pool[:200])  # limit
+    for t in optional_sample_terms:
+        for bid in term_to_bullets.get(t, []):
+            all_candidate_list.add(bid)
+
+    # Greedy: while we can add bullets that increase selected_terms by positive weighted gain
+    improved = True
+    while improved and len(selected_term_set) < MAX_TERMS:
+        improved = False
+        best_bid = None
+        best_gain = 0.0
+        for bid in all_candidate_list - selected_bullet_ids:
+            gain = weighted_gain_for_bullet(bid, selected_term_set)
+            if gain > best_gain:
+                best_gain = gain
+                best_bid = bid
+        if best_bid and best_gain > 0:
+            selected_bullet_ids.add(best_bid)
+            selected_term_set.update(bullet_index[best_bid].get("skills_used", []) + bullet_index[best_bid].get("keyword_used", []))
+            improved = True
         else:
             break
 
-    #debug
-    debug_log(debug_info, "7.optional_terms", sorted(list(optional_terms))[:200], as_text=True)
-    debug_log(debug_info, "7.selected_terms_and_optional", sorted(list(selected_terms)))
+    # After greedy, ensure all mandatory covered (if still missing, add bullets that cover missing mandatory)
+    missing_mandatory = [t for t in mandatory_terms if t not in selected_term_set]
+    for t in missing_mandatory:
+        # try to pick bullet with best bullet_weight among its bullets
+        candidates = term_to_bullets.get(t, set())
+        if candidates:
+            best_bid = max(candidates, key=lambda b: bullet_weight.get(b, 0))
+            if best_bid not in selected_bullet_ids:
+                selected_bullet_ids.add(best_bid)
+                selected_term_set.update(bullet_index[best_bid].get("skills_used", []) + bullet_index[best_bid].get("keyword_used", []))
 
-    # ---------- 8. Обрезка терминов в буллетах до MAX_TERMS_PER_BULLET ----------
-    final_bullets = []
+    debug_log(debug_info, "6a.phase_A_selected_candidate_bullet_ids", sorted(list(selected_bullet_ids)))
+    debug_log(debug_info, "6a.phase_A_selected_terms_preoptional", sorted(list(selected_term_set)))
+
+    # A5: attempt to add optional terms up to MAX_TERMS by adding best-gain bullets
+    # collect remaining optional terms
+    optional_terms_all = [t for t in resume_terms if t not in selected_term_set]
+    # greedy until reach MAX_TERMS
+    while len(selected_term_set) < MAX_TERMS:
+        best_bid = None
+        best_gain = 0.0
+        for bid in all_candidate_list - selected_bullet_ids:
+            gain = weighted_gain_for_bullet(bid, selected_term_set)
+            if gain > best_gain:
+                best_gain = gain
+                best_bid = bid
+        if best_bid and best_gain > 0:
+            selected_bullet_ids.add(best_bid)
+            selected_term_set.update(bullet_index[best_bid].get("skills_used", []) + bullet_index[best_bid].get("keyword_used", []))
+        else:
+            break
+
+    debug_log(debug_info, "6a.phase_A_selected_bullets_after_optional", sorted(list(selected_bullet_ids)))
+    debug_log(debug_info, "6a.phase_A_selected_terms_after_optional", sorted(list(selected_term_set)))
+
+    # ---------- PHASE B: trimming, restoration, apply company caps ----------
+    # first, construct selected bullets list
+    selected_bullets = [bullet_index[bid] for bid in sorted(selected_bullet_ids)]
+
+    # B1: compute initial term coverage counts
+    term_coverage_count = Counter()
     for b in selected_bullets:
-        all_terms = b.get("skills_used", []) + b.get("keyword_used", [])
-        filtered_terms = [t for t in all_terms if t in selected_terms][:MAX_TERMS_PER_BULLET]
-        if filtered_terms:
-            b["skills_used"] = [t for t in filtered_terms if skill_type_map.get(t.lower()) in ["hard","soft"]]
-            b["keyword_used"] = [t for t in filtered_terms if skill_type_map.get(t.lower()) == "keyword"]
-            final_bullets.append(b)
+        for t in b.get("skills_used", []) + b.get("keyword_used", []):
+            term_coverage_count[t] += 1
 
-    #debug
-    debug_log(debug_info, "8.final_bullets_safe", [{ "id": b.get("id"), "terms": list(b.get("skills_used", []) + b.get("keyword_used", [])) } for b in final_bullets], as_text=True, limit=2000)
+    debug_log(debug_info, "7a.term_coverage_count_before_trim", dict(term_coverage_count))
 
-    # ---------- 9. Сортировка буллетов внутри компаний по важности ----------
-    bullets_by_company_final = {}
+    # B2: soft trim each bullet to MAX_TERMS_PER_BULLET by choosing top terms by term_weight (priority + rarity)
+    for b in selected_bullets:
+        terms = b.get("skills_used", []) + b.get("keyword_used", [])
+        if len(terms) > MAX_TERMS_PER_BULLET:
+            # sort by (term_weight, then priority) descending
+            terms_sorted = sorted(terms, key=lambda t: (term_weight.get(t, 0), priority_weight.get(t, 1)), reverse=True)
+            chosen = terms_sorted[:MAX_TERMS_PER_BULLET]
+            # update coverage counters
+            for t in set(terms) - set(chosen):
+                term_coverage_count[t] -= 1
+            # replace terms in bullet (keep type separation)
+            b["skills_used"] = [t for t in chosen if skill_type_map.get(t.lower()) in ["hard", "soft"]]
+            b["keyword_used"] = [t for t in chosen if skill_type_map.get(t.lower()) == "keyword"]
+        else:
+            # keep as is (but ensure they are in selected_term_set)
+            b["skills_used"] = [t for t in b.get("skills_used", []) if t in selected_term_set]
+            b["keyword_used"] = [t for t in b.get("keyword_used", []) if t in selected_term_set]
+
+    debug_log(debug_info, "7a.term_coverage_count_after_trim", dict(term_coverage_count))
+    debug_log(debug_info, "7a.selected_bullets_ids_after_trim", [b.get("id") for b in selected_bullets])
+
+    # B3: find lost terms (coverage 0) and try to restore by adding bullets (prefer best bullet_weight)
+    lost_terms = [t for t, cnt in term_coverage_count.items() if cnt <= 0 and t in selected_term_set]
+    restored = []
+    for t in lost_terms:
+        candidates = term_to_bullets.get(t, set())
+        # pick best candidate not already selected
+        best_bid = None
+        best_w = -1
+        for bid in candidates:
+            if bid in selected_bullet_ids:
+                continue
+            w = bullet_weight.get(bid, 0)
+            if w > best_w:
+                best_w = w
+                best_bid = bid
+        if best_bid:
+            # add bullet back (even if this may later be pruned by company caps)
+            selected_bullet_ids.add(best_bid)
+            selected_bullets.append(bullet_index[best_bid])
+            for tt in bullet_index[best_bid].get("skills_used", []) + bullet_index[best_bid].get("keyword_used", []):
+                term_coverage_count[tt] += 1
+            restored.append((t, best_bid))
+
+    debug_log(debug_info, "7a.lost_terms", lost_terms)
+    debug_log(debug_info, "7a.restored_terms_with_bullets", restored)
+    debug_log(debug_info, "7a.term_coverage_count_post_restore", dict(term_coverage_count))
+
+    # B4: apply per-company caps NOW (final pruning)
+    # first compute company_caps if not already (we computed earlier in older code; recompute reliably)
+    company_caps = {}
+    for idx, exp in enumerate(master_resume.get("experience", [])):
+        duration_years = exp.get("duration_years", 0)
+        cap = ceil(duration_years) + 1 if duration_years - floor(duration_years) >= 0.5 else floor(duration_years) + 1
+        company_caps[idx] = cap
+    debug_log(debug_info, "8a.company_caps", company_caps)
+
+    # group selected bullets by company_key
+    sel_by_company = defaultdict(list)
+    for bid in list(selected_bullet_ids):
+        b = bullet_index.get(bid)
+        if not b:
+            continue
+        ck = bullet_to_company.get(bid)
+        sel_by_company[ck].append(b)
+
+    # For each company, if too many bullets -> iteratively remove bullets with minimal penalty
+    removals = []
+    for ck, blist in sel_by_company.items():
+        cap = company_caps.get(ck, 1)
+        # while exceed cap, choose bullet to remove with minimal loss score
+        while len(blist) > cap:
+            # compute penalty for removing each bullet: sum of term_weight for terms that would lose all coverage
+            loss_scores = {}
+            for b in blist:
+                bid = b.get("id")
+                loss = 0.0
+                # terms that currently have coverage 1 and are provided by this bullet
+                for t in (b.get("skills_used", []) + b.get("keyword_used", [])):
+                    if term_coverage_count.get(t, 0) == 1:
+                        # removing b would orphan t -> big penalty
+                        loss += term_weight.get(t, 0) * 1000.0
+                    else:
+                        # small penalty proportional to importance
+                        loss += term_weight.get(t, 0)
+                loss_scores[bid] = loss
+            # pick bullet with minimal loss (tie-breaker: lower bullet_weight)
+            bid_to_remove = min(loss_scores.keys(), key=lambda bid: (loss_scores[bid], bullet_weight.get(bid, 0)))
+            # remove it from blist and update structures
+            brem = next((b for b in blist if b.get("id") == bid_to_remove), None)
+            if not brem:
+                break
+            blist.remove(brem)
+            selected_bullet_ids.discard(bid_to_remove)
+            # update term_coverage_count
+            for t in (brem.get("skills_used", []) + brem.get("keyword_used", [])):
+                term_coverage_count[t] -= 1
+            removals.append((ck, bid_to_remove))
+        # update sel_by_company[ck] = blist (already modified)
+        sel_by_company[ck] = blist
+
+    debug_log(debug_info, "8a.company_trim_removals", removals)
+    debug_log(debug_info, "8a.term_coverage_after_company_trim", dict(term_coverage_count))
+
+    # Rebuild final_bullets list from selected_bullet_ids, preserving original company order and per-company sorting
+    final_bullets = [bullet_index[bid] for bid in sorted(selected_bullet_ids) if bid in bullet_index]
+    # ensure each bullet only contains terms that remain covered and in selected_term_set
     for b in final_bullets:
-        company_key = bullet_to_company.get(b["id"])
-        if company_key is not None:
-            bullets_by_company_final.setdefault(company_key, []).append(b)
-    for bullets in bullets_by_company_final.values():
-        bullets.sort(key=lambda b: min([priority_map.get(t.lower(), 1000) for t in b.get("skills_used", []) + b.get("keyword_used", [])]) if (b.get("skills_used", []) + b.get("keyword_used", [])) else 1000)
+        terms = [t for t in (b.get("skills_used", []) + b.get("keyword_used", [])) if term_coverage_count.get(t, 0) > 0 and t in selected_term_set]
+        # again trim to MAX_TERMS_PER_BULLET by weight (safety)
+        terms_sorted = sorted(terms, key=lambda t: (term_weight.get(t, 0), priority_weight.get(t,1)), reverse=True)
+        chosen = terms_sorted[:MAX_TERMS_PER_BULLET]
+        b["skills_used"] = [t for t in chosen if skill_type_map.get(t.lower()) in ["hard", "soft"]]
+        b["keyword_used"] = [t for t in chosen if skill_type_map.get(t.lower()) == "keyword"]
 
-    #debug
-    debug_log(debug_info, "9.bullets_by_company_final_safe", {cid: [{ "id": bb.get("id"), "terms": list(bb.get("skills_used", []) + bb.get("keyword_used", [])) } for bb in blist] for cid, blist in bullets_by_company_final.items()}, as_text=True, limit=2000)
+    # final debug snapshots
+    debug_log(debug_info, "9a.final_selected_bullet_ids", [b.get("id") for b in final_bullets])
+    debug_log(debug_info, "9a.final_selected_terms", sorted([t for t, cnt in term_coverage_count.items() if cnt > 0]))
+    debug_log(debug_info, "9a.bullets_by_company_final_safe", {cid: [{ "id": bb.get("id"), "terms": list(bb.get("skills_used", []) + bb.get("keyword_used", [])) } for bb in blist] for cid, blist in sel_by_company.items()}, as_text=True, limit=3000)
 
     # ---------- 10. Формируем адаптированные skills и keywords ----------
     adapted_hard = {}
@@ -650,7 +793,6 @@ def filter_and_rank_bullets(master_resume, extract):
             root = term_to_root.get(term_l, t)
             origin_flag = origin_map.get(term_l, False)
             skill_type = skill_type_map.get(term_l)
-
             target_dict = None
             if skill_type == "hard":
                 target_dict = adapted_hard
@@ -658,10 +800,8 @@ def filter_and_rank_bullets(master_resume, extract):
                 target_dict = adapted_soft
             elif skill_type == "keyword":
                 target_dict = adapted_keywords
-
             if target_dict is None:
                 continue
-
             if root not in target_dict:
                 target_dict[root] = {"term": root, "confirmed_by": [], "origin": origin_flag}
             if b_id not in target_dict[root]["confirmed_by"]:
@@ -690,7 +830,7 @@ def filter_and_rank_bullets(master_resume, extract):
     if "job_title" in extract:
         adapted_resume["desired_positions"] = [extract["job_title"]]
 
-    #debug
+    # debug
     adapted_resume["_debug_info"] = debug_info
 
     return adapted_resume
