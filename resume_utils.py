@@ -861,13 +861,6 @@ def filter_and_rank_bullets(master_resume, extract):
     if "job_title" in extract:
         adapted_resume["desired_positions"] = [extract["job_title"]]
 
-    # debug
-    adapted_resume["_debug_info"]["12.sorted_skills_and_keywords"] = {
-        "hard_skills": [s["term"] for s in adapted_resume["skills"]["hard_skills"]],
-        "soft_skills": [s["term"] for s in adapted_resume["skills"]["soft_skills"]],
-        "keywords": [k["term"] for k in adapted_resume["keywords"]]
-    }
-
     return adapted_resume
 
 
