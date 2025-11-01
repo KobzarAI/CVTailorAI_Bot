@@ -205,6 +205,9 @@ def find_gaps_and_update_master(extract, master_resume):
     unless present in explicitly_not_used.
     Return updated master_resume.
     """
+    #debug
+    debug_info = {}
+
     # Prepare sets of skill/keyword terms in master which are confirmed
     hard_skills = set(
         s["term"].lower()
@@ -221,6 +224,11 @@ def find_gaps_and_update_master(extract, master_resume):
         for k in master_resume.get("keywords", [])
         if k.get("confirmed_by") and len(k["confirmed_by"]) > 0
     )
+
+    #debug
+    debug_log(debug_info, "hard_skills_initial(confirmed master)", hard_skills)
+    debug_log(debug_info, "soft_skills_initial(confirmed master)", soft_skills)
+    debug_log(debug_info, "keywords_initial(confirmed master)", keywords)
 
     # Explicitly not used terms
     explicitly_not_used_skills = set(
@@ -277,25 +285,40 @@ def find_gaps_and_update_master(extract, master_resume):
         candidates = [term] + synonyms
         candidates_lower = [c.lower() for c in candidates]
 
+        # --- DEBUG BLOCK START ---
+        debug_log(debug_info, f"skill_{term}_type", typ)
+        debug_log(debug_info, f"skill_{term}_candidates", candidates)
+        debug_log(debug_info, f"skill_{term}_candidates_lower", candidates_lower)
+        debug_log(debug_info, f"skill_{term}_hard_set_snapshot", hard_skills, as_text=True, limit=500)
+        debug_log(debug_info, f"skill_{term}_soft_set_snapshot", soft_skills, as_text=True, limit=500)
+        # --- DEBUG BLOCK END ---
+
         # Skip if any candidate is in explicitly_not_used
         if any(c in explicitly_not_used_skills for c in candidates_lower):
+            debug_log(debug_info, f"skill_{term}_skipped_explicitly_not_used", candidates_lower)        #debug
             continue
 
         # Check confirmed sets + raw list in master
         if typ == "hard":
+            debug_log(debug_info, f"skill_{term}_hard_before", master_resume["skills"]["hard_skills"], as_text=True, limit=1000) #debug
             already_present = any(
                 c in hard_skills or term_in_list(c, master_resume["skills"]["hard_skills"])
                 for c in candidates
             )
+            debug_log(debug_info, f"skill_{term}_already_present", already_present)                     #debug
             if not already_present:
                 add_unconfirmed_skill(term, "hard")
+                debug_log(debug_info, f"skill_{term}_added_to_unconfirmed_hard", term)                  #debug
         elif typ == "soft":
+            debug_log(debug_info, f"skill_{term}_soft_before", master_resume["skills"]["soft_skills"], as_text=True, limit=1000)  #debug
             already_present = any(
                 c in soft_skills or term_in_list(c, master_resume["skills"]["soft_skills"])
                 for c in candidates
             )
+            debug_log(debug_info, f"skill_{term}_already_present", already_present)                     #debug
             if not already_present:
                 add_unconfirmed_skill(term, "soft")
+                debug_log(debug_info, f"skill_{term}_added_to_unconfirmed_soft", term)                  #debug
 
     # Check keywords with synonyms from extract
     for keyword_req in extract.get("required_keywords", []):
@@ -304,15 +327,33 @@ def find_gaps_and_update_master(extract, master_resume):
         candidates = [term] + synonyms
         candidates_lower = [c.lower() for c in candidates]
 
+        # --- DEBUG BLOCK START ---
+        debug_log(debug_info, f"keyword_{term}_candidates", candidates)
+        debug_log(debug_info, f"keyword_{term}_candidates_lower", candidates_lower)
+        debug_log(debug_info, f"keyword_{term}_keywords_set_snapshot", keywords, as_text=True, limit=500)
+        # --- DEBUG BLOCK END ---
+
+        # Skip if any candidate is in explicitly_not_used
         if any(c in explicitly_not_used_keywords for c in candidates_lower):
+            debug_log(debug_info, f"keyword_{term}_skipped_explicitly_not_used", candidates_lower)
             continue
 
+        # Snapshot before checking
+        debug_log(debug_info, f"keyword_{term}_before_check", master_resume["keywords"], as_text=True, limit=1000)
+
+        # Check confirmed sets + raw list in master
         already_present = any(
             c in keywords or term_in_list(c, master_resume["keywords"])
             for c in candidates
         )
+        debug_log(debug_info, f"keyword_{term}_already_present", already_present)
+
         if not already_present:
             add_unconfirmed_keyword(term)
+            debug_log(debug_info, f"keyword_{term}_added_to_unconfirmed", term)
+
+    #debug
+    master_resume["debug"] = debug_info
 
     return master_resume
 
