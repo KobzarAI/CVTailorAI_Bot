@@ -553,6 +553,11 @@ def filter_and_rank_bullets(master_resume, extract):
     mandatory_terms = set(t for t in mandatory_terms if t.lower() in resume_terms)
     nice_terms = set(t for t in nice_terms if t.lower() in resume_terms)
 
+    # --- DEBUG ---
+    debug_log(debug_info, "resume_terms", list(resume_terms))
+    debug_log(debug_info, "mandatory_terms", list(mandatory_terms))
+    debug_log(debug_info, "nice_terms", list(nice_terms))
+
     # ---------- PREP: flatten bullets and build term->bullets map ----------
     all_bullets = []          # list of bullet dicts (objects)
     all_bullet_ids = []       # list of bullet ids in same order
