@@ -426,6 +426,8 @@ def filter_and_rank_bullets(master_resume, extract):
 
     debug_info = {}
 
+    master_resume = copy.deepcopy(master_resume) #перед нормализацией терминов, чтоб потом не переписывать весь код использующий мастер
+
     # ---------- 1. Подготовка: map термин → root + приоритет ----------
     term_to_root = {}
     priority_map = {}
@@ -440,6 +442,53 @@ def filter_and_rank_bullets(master_resume, extract):
                 term_to_root[syn.lower()] = root
                 if syn.lower() not in priority_map or priority < priority_map[syn.lower()]:
                     priority_map[syn.lower()] = priority
+
+    # ---------- 1.1. Нормализация терминов в мастер-резюме ----------
+    def normalize_term(term):
+        """Возвращает корневой термин, если есть в term_to_root, иначе сам термин."""
+        if not isinstance(term, str):
+            return term
+        t_lower = term.lower()
+        return term_to_root.get(t_lower, term)
+
+    #====DEBUG SECTION START======
+    normalized_map = {}  # для дебага
+
+    for section in ["skills", "keywords"]:
+        if section in master_resume:
+            if section == "skills":
+                for typ in ["hard_skills", "soft_skills"]:
+                    if typ in master_resume["skills"]:
+                        for skill in master_resume["skills"][typ]:
+                            old = skill.get("term")
+                            new = normalize_term(old)
+                            if old != new:
+                                normalized_map[old] = new
+                            skill["term"] = new
+            elif section == "keywords":
+                for kw in master_resume["keywords"]:
+                    old = kw.get("term")
+                    new = normalize_term(old)
+                    if old != new:
+                        normalized_map[old] = new
+                    kw["term"] = new
+
+    """
+    for section in ["skills", "keywords"]:
+        if section in master_resume:
+            if section == "skills":
+                for typ in ["hard_skills", "soft_skills"]:
+                    if typ in master_resume["skills"]:
+                        for skill in master_resume["skills"][typ]:
+                            skill["term"] = normalize_term(skill.get("term"))
+            elif section == "keywords":
+                for kw in master_resume["keywords"]:
+                    kw["term"] = normalize_term(kw.get("term"))
+    """
+
+    # debug: покажем, какие термины были заменены
+    debug_log(debug_info, "normalized_terms", normalized_map)
+    #====DEBUG SECTION END======
 
     # ---------- 2. Подготовка master_resume ----------
     full_skill_pool = {}
@@ -539,6 +588,20 @@ def filter_and_rank_bullets(master_resume, extract):
             if bid is not None:
                 bullet_to_company[bid] = company_key
                 bullet_index[bid] = bullet_copy
+
+    #====DEBUG SECTION START======
+    # debug: покажем примеры нормализованных буллетов
+    debug_bullets = []
+    for company_key, blts in bullets_by_company.items():
+        for b in blts[:3]:  # берём до трёх буллетов на компанию, чтобы не захламлять
+            debug_bullets.append({
+                "company": company_key,
+                "id": b.get("id"),
+                "skills_used": b.get("skills_used"),
+                "keyword_used": b.get("keyword_used"),
+            })
+    debug_log(debug_info, "normalized_bullets_sample", debug_bullets)
+    #====DEBUG SECTION END======
 
     # ---------- 4. Определяем множества терминов ----------
     mandatory_terms = set(
