@@ -1355,7 +1355,7 @@ def cv2text(master_resume: dict) -> str:
         job_title = exp.get("job_title", "").strip()
         location = exp.get("location", "").strip()
         start_date = exp.get("start_date", "").strip()
-        end_date = exp.get("end_date", "").strip() or "now"
+        end_date = exp.get("end_date", "").strip() or "Present"
         bullets = exp.get("bullets", [])
 
         # Заголовок компании и должности
