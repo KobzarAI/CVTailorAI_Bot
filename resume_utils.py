@@ -893,6 +893,20 @@ def filter_and_rank_bullets(master_resume, extract):
                         # small penalty proportional to importance
                         loss += term_weight.get(t, 0)
                 loss_scores[bid] = loss
+        
+            # === DEBUG START ===
+            if any(b.get("id") == 37 for b in blist):
+                b37 = next((b for b in blist if b.get("id") == 37), None)
+                if b37:
+                    debug_log(debug_info, "debug_bullet_37_state", {
+                        "bullet_id": b37.get("id"),
+                        "bullet_terms": b37.get("skills_used", []) + b37.get("keyword_used", []),
+                        "term_weights": {t: term_weight.get(t, None) for t in b37.get("skills_used", []) + b37.get("keyword_used", [])},
+                        "term_coverage_count": {t: term_coverage_count.get(t, None) for t in b37.get("skills_used", []) + b37.get("keyword_used", [])},
+                        "loss_score": loss_scores.get(37)
+                    })
+            # === DEBUG END ===
+
             # pick bullet with minimal loss (tie-breaker: lower bullet_weight)
             bid_to_remove = min(loss_scores.keys(), key=lambda bid: (loss_scores[bid], bullet_weight.get(bid, 0)))
             # remove it from blist and update structures
