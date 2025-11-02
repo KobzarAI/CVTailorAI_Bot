@@ -896,6 +896,8 @@ def filter_and_rank_bullets(master_resume, extract):
                 # --- PATCH: взвешиваем по приоритету и длине ---
                 if len(terms) > 1:
                     loss = loss / (len(terms) ** 0.3)
+                
+                loss_scores[bid] = loss
         
             # === DEBUG START ===
             if any(b.get("id") == 37 for b in blist):
