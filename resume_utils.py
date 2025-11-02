@@ -688,38 +688,106 @@ def filter_and_rank_bullets(master_resume, extract):
     # --- DEBUG ---
     debug_log(debug_info, "A3_candidate_bullets_after", list(candidate_bullets))
 
-    # A4: try to add bullets to cover nice_terms (and extend candidate pool)
-    # we prefer bullets that add most NEW term_weight
-    selected_bullet_ids = set(candidate_bullets)
-    selected_term_set = set()
-    for bid in list(selected_bullet_ids):
-        b = bullet_index[bid]
-        selected_term_set.update(b.get("skills_used", []) + b.get("keyword_used", []))
-    # Add nice -> choose bullets that bring new coverage by weighted gain
+    # ==============================================================
+    # A4: расширяем набор буллетов с учётом приоритетов терминов
+    # ==============================================================
+    # приоритеты: 1 → 2 → 3 → остальные (optional)
+    # --------------------------------------------------------------
+
     def weighted_gain_for_bullet(bid, current_terms):
+        """Оценивает, насколько сильно добавление этого буллета улучшает покрытие терминов."""
         b = bullet_index[bid]
         terms = b.get("skills_used", []) + b.get("keyword_used", [])
         gain = sum(term_weight.get(t, 0) for t in terms if t not in current_terms)
         return gain
 
-    # candidate pool initially contains mandatory candidates + all bullets that contain at least one mandatory or nice term
+    # инициализируем множество выбранных буллетов и терминов из уже отобранных обязательных
+    selected_bullet_ids = set(candidate_bullets)
+    selected_term_set = set()
+    for bid in selected_bullet_ids:
+        b = bullet_index[bid]
+        selected_term_set.update(b.get("skills_used", []) + b.get("keyword_used", []))
+
+    debug_log(debug_info, "A4_initial_selected_bullets", list(selected_bullet_ids))
+    debug_log(debug_info, "A4_initial_selected_terms", list(selected_term_set))
+
+    # соберём все возможные кандидаты: mandatory + nice + ограниченный набор optional
+    all_candidate_list = set(candidate_bullets)
     for t in nice_terms:
         for bid in term_to_bullets.get(t, []):
-            candidate_bullets.add(bid)
-
-    # greedy add from candidate_bullets to improve coverage until reach MAX_TERMS or no gain
-    all_candidate_list = set(candidate_bullets) | set(all_bullet_ids)
-    # but limit to not explode: keep all bullets that contain any term in mandatory/nice/first-k optional
-    # get optional candidates sample
+            all_candidate_list.add(bid)
     optional_pool = [t for t in resume_terms if t not in mandatory_terms and t not in nice_terms]
-    optional_sample_terms = set(optional_pool[:200])  # limit
+    optional_sample_terms = set(optional_pool[:200])
     for t in optional_sample_terms:
         for bid in term_to_bullets.get(t, []):
             all_candidate_list.add(bid)
 
-    # --- DEBUG ---
-    debug_log(debug_info, "A4_candidate_bullets_before_greedy", list(candidate_bullets))
-    debug_log(debug_info, "A4_selected_term_set_before_greedy", list(selected_term_set))
+    debug_log(debug_info, "A4_all_candidate_list_before_greedy", list(all_candidate_list))
+
+    # --- Новый приоритетный greedy-подбор ---
+    # мы идем по уровням приоритетов, от 1 к большему, и в каждом выбираем лучшие по gain
+    priorities = sorted(set(priority_map.values()))
+    improved = True
+
+    for p in priorities:
+        if len(selected_term_set) >= MAX_TERMS:
+            break
+
+        # термины с этим приоритетом
+        tier_terms = {t for t, pr in priority_map.items() if pr == p}
+        tier_bullets = set()
+        for t in tier_terms:
+            tier_bullets.update(term_to_bullets.get(t, []))
+
+        tier_bullets &= all_candidate_list  # оставляем только реальные буллеты
+
+        debug_log(debug_info, f"A4_tier_{p}_bullets_start", list(tier_bullets))
+
+        while len(selected_term_set) < MAX_TERMS:
+            best_bid = None
+            best_gain = 0.0
+
+            for bid in tier_bullets - selected_bullet_ids:
+                gain = weighted_gain_for_bullet(bid, selected_term_set)
+                if gain > best_gain:
+                    best_gain = gain
+                    best_bid = bid
+
+            if best_bid and best_gain > 0:
+                selected_bullet_ids.add(best_bid)
+                b = bullet_index[best_bid]
+                selected_term_set.update(b.get("skills_used", []) + b.get("keyword_used", []))
+                improved = True
+            else:
+                break
+
+        debug_log(debug_info, f"A4_tier_{p}_selected_bullets", list(selected_bullet_ids))
+        debug_log(debug_info, f"A4_tier_{p}_selected_terms", list(selected_term_set))
+
+        if not improved or len(selected_term_set) >= MAX_TERMS:
+            break
+
+    # если после всех приоритетных групп осталось место — можно добрать optional
+    if len(selected_term_set) < MAX_TERMS:
+        improved = True
+        while improved and len(selected_term_set) < MAX_TERMS:
+            improved = False
+            best_bid = None
+            best_gain = 0.0
+            for bid in all_candidate_list - selected_bullet_ids:
+                gain = weighted_gain_for_bullet(bid, selected_term_set)
+                if gain > best_gain:
+                    best_gain = gain
+                    best_bid = bid
+            if best_bid and best_gain > 0:
+                selected_bullet_ids.add(best_bid)
+                selected_term_set.update(bullet_index[best_bid].get("skills_used", []) + bullet_index[best_bid].get("keyword_used", []))
+                improved = True
+            else:
+                break
+
+    debug_log(debug_info, "A4_final_selected_bullets", list(selected_bullet_ids))
+    debug_log(debug_info, "A4_final_selected_terms", list(selected_term_set))
 
     # Greedy: while we can add bullets that increase selected_terms by positive weighted gain
     improved = True
