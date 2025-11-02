@@ -877,34 +877,33 @@ def filter_and_rank_bullets(master_resume, extract):
     removals = []
     for ck, blist in sel_by_company.items():
         cap = company_caps.get(ck, 1)
-        # while exceed cap, choose bullet to remove with minimal loss score
         while len(blist) > cap:
-            # compute penalty for removing each bullet: sum of term_weight for terms that would lose all coverage
             loss_scores = {}
             for b in blist:
                 bid = b.get("id")
                 terms = b.get("skills_used", []) + b.get("keyword_used", [])
 
-                # --- PATCH: защита mandatory + nice-to-have ---
-                protected_terms = [t for t in terms if t in mandatory_terms or t in nice_terms]
-                if any(term_coverage_count.get(t, 0) == 1 for t in protected_terms):
-                    # буллет содержит уникальный обязательный или nice термин → нельзя удалять
-                    loss_scores[bid] = float("inf")
-                    continue  # этот буллет нельзя удалять
-
-                # обычная формула для остальных
-                loss = 0.0
-                for t in terms:
-                    w = term_weight.get(t, 0)
-                    if term_coverage_count.get(t, 0) == 1:
-                        # более точный коэффициент — важные термины усиливаются сильнее
-                        loss += w * (1500.0 if w >= 2 else 1000.0)
-                    else:
-                        loss += w
-
-                # небольшая корректировка на длину буллета
-                if len(terms) > 1:
-                    loss = loss / (len(terms) ** 0.3)
+                # --- 1. Считаем приоритет экстракта ---
+                extract_term_priorities = [priority_map.get(t.lower(), None) for t in terms if t in mandatory_terms or t in nice_terms]
+                if extract_term_priorities:
+                    # защищаем максимальный приоритет
+                    max_priority = min(extract_term_priorities)  # 1 = highest priority
+                    # считаем количество уникальных вымирающих терминов (coverage 1)
+                    dying_terms_count = sum(1 for t in terms if term_coverage_count.get(t, 0) == 1 and t in mandatory_terms | nice_terms)
+                    # комбинированный loss: чем выше приоритет и больше вымирающих терминов, тем выше защита
+                    loss = max_priority * 10000 + dying_terms_count * 1000
+                else:
+                    # --- 2. Если терминов экстракта нет — используем старый весовой метод ---
+                    loss = 0.0
+                    for t in terms:
+                        w = term_weight.get(t, 0)
+                        if term_coverage_count.get(t, 0) == 1:
+                            loss += w * 1000.0
+                        else:
+                            loss += w
+                    # optional: корректируем за длину буллета
+                    if len(terms) > 1:
+                        loss = loss / (len(terms) ** 0.3)
 
                 loss_scores[bid] = loss
 
@@ -917,11 +916,9 @@ def filter_and_rank_bullets(master_resume, extract):
                 break
             blist.remove(brem)
             selected_bullet_ids.discard(bid_to_remove)
-            # update term_coverage_count
-            for t in (brem.get("skills_used", []) + brem.get("keyword_used", [])):
+            for t in brem.get("skills_used", []) + brem.get("keyword_used", []):
                 term_coverage_count[t] -= 1
             removals.append((ck, bid_to_remove))
-        # update sel_by_company[ck] = blist (already modified)
         sel_by_company[ck] = blist
 
     # --- DEBUG ---
@@ -976,11 +973,40 @@ def filter_and_rank_bullets(master_resume, extract):
     # ---------- 11. Восстанавливаем experience ----------
     bullet_map = {b["id"]: b for b in final_bullets}
     restored_experience = []
+
+    def bullet_sort_key(b, priority_map, mandatory_terms, nice_terms, bullet_weight):
+        """
+        Ключ для сортировки буллетов внутри компании.
+        1) Сначала буллеты, которые содержат термины экстракта (mandatory/nice_to_have),
+        сортируются по минимальному приоритету среди этих терминов.
+        2) Если нет терминов экстракта, сортируются по весу bullet_weight.
+        """
+        terms = b.get("skills_used", []) + b.get("keyword_used", [])
+        extract_terms = [t for t in terms if t in mandatory_terms or t in nice_terms]
+        extract_priorities = [priority_map.get(t.lower(), 1000) for t in extract_terms]
+        
+        # DEBUG: покажем ключ для каждого буллета
+        debug_log(debug_info, "bullet_sort_debug", {
+            "bullet_id": b.get("id"),
+            "terms": terms,
+            "extract_terms": extract_terms,
+            "extract_priorities": extract_priorities,
+            "weight": bullet_weight.get(b.get("id"), None)
+        })
+        
+        if extract_priorities:
+            return (0, min(extract_priorities))  # приоритет по экстракту
+        else:
+            return (1, bullet_weight.get(b.get("id"), 0))  # сортировка по весу
+
     for company in copy.deepcopy(master_resume.get("experience", [])):
         original_ids = [b.get("id") for b in company.get("bullets", []) if "id" in b]
         filtered_bullets = [bullet_map[bid] for bid in original_ids if bid in bullet_map]
+        
         if filtered_bullets:
-            filtered_bullets.sort(key=lambda b: min([priority_map.get(t.lower(), 1000) for t in b.get("skills_used", []) + b.get("keyword_used", [])]) if (b.get("skills_used", []) + b.get("keyword_used", [])) else 1000)
+            filtered_bullets.sort(
+                key=lambda b: bullet_sort_key(b, priority_map, mandatory_terms, nice_terms, bullet_weight)
+            )
             company["bullets"] = filtered_bullets
             restored_experience.append(company)
 
