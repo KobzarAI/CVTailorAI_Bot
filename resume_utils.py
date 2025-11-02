@@ -884,15 +884,18 @@ def filter_and_rank_bullets(master_resume, extract):
             for b in blist:
                 bid = b.get("id")
                 loss = 0.0
-                # terms that currently have coverage 1 and are provided by this bullet
-                for t in (b.get("skills_used", []) + b.get("keyword_used", [])):
+                terms = (b.get("skills_used", []) + b.get("keyword_used", []))
+                for t in terms:
+                    w = term_weight.get(t, 0)
                     if term_coverage_count.get(t, 0) == 1:
-                        # removing b would orphan t -> big penalty
-                        loss += term_weight.get(t, 0) * 1000.0
+                        # более точный коэффициент — важные термины усиливаются сильнее
+                        loss += w * (1500.0 if w >= 2 else 1000.0)
                     else:
-                        # small penalty proportional to importance
-                        loss += term_weight.get(t, 0)
-                loss_scores[bid] = loss
+                        loss += w
+
+                # --- PATCH: взвешиваем по приоритету и длине ---
+                if len(terms) > 1:
+                    loss = loss / (len(terms) ** 0.3)
         
             # === DEBUG START ===
             if any(b.get("id") == 37 for b in blist):
