@@ -421,11 +421,7 @@ def debug_log(debug_info, name, obj, as_text=False, head=None, limit=None):
 def filter_and_rank_bullets(master_resume, extract):
     """
     Совместимая версия filter_and_rank_bullets с улучшенным алгоритмом выбора буллетов.
-    Сохраняет входные/выходные структуры, добавляет подробный debug.
     """
-
-    debug_info = {}
-
     master_resume = copy.deepcopy(master_resume) #перед нормализацией терминов, чтоб потом не переписывать весь код использующий мастер
 
     # ---------- 1. Подготовка: map термин → root + приоритет ----------
@@ -451,29 +447,7 @@ def filter_and_rank_bullets(master_resume, extract):
         t_lower = term.lower()
         return term_to_root.get(t_lower, term)
 
-    #====DEBUG SECTION START======
-    normalized_map = {}  # для дебага
 
-    for section in ["skills", "keywords"]:
-        if section in master_resume:
-            if section == "skills":
-                for typ in ["hard_skills", "soft_skills"]:
-                    if typ in master_resume["skills"]:
-                        for skill in master_resume["skills"][typ]:
-                            old = skill.get("term")
-                            new = normalize_term(old)
-                            if old != new:
-                                normalized_map[old] = new
-                            skill["term"] = new
-            elif section == "keywords":
-                for kw in master_resume["keywords"]:
-                    old = kw.get("term")
-                    new = normalize_term(old)
-                    if old != new:
-                        normalized_map[old] = new
-                    kw["term"] = new
-
-    """
     for section in ["skills", "keywords"]:
         if section in master_resume:
             if section == "skills":
@@ -484,11 +458,6 @@ def filter_and_rank_bullets(master_resume, extract):
             elif section == "keywords":
                 for kw in master_resume["keywords"]:
                     kw["term"] = normalize_term(kw.get("term"))
-    """
-
-    # debug: покажем, какие термины были заменены
-    debug_log(debug_info, "normalized_terms", normalized_map)
-    #====DEBUG SECTION END======
 
     # ---------- 2. Подготовка master_resume ----------
     full_skill_pool = {}
@@ -589,20 +558,6 @@ def filter_and_rank_bullets(master_resume, extract):
                 bullet_to_company[bid] = company_key
                 bullet_index[bid] = bullet_copy
 
-    #====DEBUG SECTION START======
-    # debug: покажем примеры нормализованных буллетов
-    debug_bullets = []
-    for company_key, blts in bullets_by_company.items():
-        for b in blts[:3]:  # берём до трёх буллетов на компанию, чтобы не захламлять
-            debug_bullets.append({
-                "company": company_key,
-                "id": b.get("id"),
-                "skills_used": b.get("skills_used"),
-                "keyword_used": b.get("keyword_used"),
-            })
-    debug_log(debug_info, "normalized_bullets_sample", debug_bullets)
-    #====DEBUG SECTION END======
-
     # ---------- 4. Определяем множества терминов ----------
     mandatory_terms = set(
         term_to_root.get(t.lower(), t)
@@ -615,11 +570,6 @@ def filter_and_rank_bullets(master_resume, extract):
     resume_terms = set(t.lower() for t in full_skill_pool.keys())
     mandatory_terms = set(t for t in mandatory_terms if t.lower() in resume_terms)
     nice_terms = set(t for t in nice_terms if t.lower() in resume_terms)
-
-    # --- DEBUG ---
-    debug_log(debug_info, "resume_terms", list(resume_terms))
-    debug_log(debug_info, "mandatory_terms", list(mandatory_terms))
-    debug_log(debug_info, "nice_terms", list(nice_terms))
 
     # ---------- PREP: flatten bullets and build term->bullets map ----------
     all_bullets = []          # list of bullet dicts (objects)
@@ -685,9 +635,6 @@ def filter_and_rank_bullets(master_resume, extract):
             if bullet_weight.get(bid, 0) >= threshold:
                 candidate_bullets.add(bid)
 
-    # --- DEBUG ---
-    debug_log(debug_info, "A3_candidate_bullets_after", list(candidate_bullets))
-
     # A4: try to add bullets to cover nice_terms (and extend candidate pool)
     # we prefer bullets that add most NEW term_weight
     selected_bullet_ids = set()
@@ -735,10 +682,6 @@ def filter_and_rank_bullets(master_resume, extract):
         for bid in term_to_bullets.get(t, []):
             all_candidate_list.add(bid)
 
-    # --- DEBUG ---
-    debug_log(debug_info, "A4_candidate_bullets_before_greedy", list(candidate_bullets))
-    debug_log(debug_info, "A4_selected_term_set_before_greedy", list(selected_term_set))
-
     # Greedy: while we can add bullets that increase selected_terms by positive weighted gain
     improved = True
     while improved and len(selected_term_set) < MAX_TERMS:
@@ -757,14 +700,8 @@ def filter_and_rank_bullets(master_resume, extract):
         else:
             break
 
-    # --- DEBUG ---
-    debug_log(debug_info, "A4_selected_term_set_after_greedy", list(selected_term_set))
-
     # After greedy, ensure all mandatory covered (if still missing, add bullets that cover missing mandatory)
     missing_mandatory = [t for t in mandatory_terms if t not in selected_term_set]
-    # --- DEBUG ---
-    debug_log(debug_info, "A4_missing_mandatory_before_A5", list(missing_mandatory))
-    debug_log(debug_info, "A4_selected_term_set_before_A5", list(selected_term_set))
     for t in missing_mandatory:
         # try to pick bullet with best bullet_weight among its bullets
         candidates = term_to_bullets.get(t, set())
@@ -774,14 +711,9 @@ def filter_and_rank_bullets(master_resume, extract):
                 selected_bullet_ids.add(best_bid)
                 selected_term_set.update(bullet_index[best_bid].get("skills_used", []) + bullet_index[best_bid].get("keyword_used", []))
 
-    # --- DEBUG ---
-    debug_log(debug_info, "A4_selected_term_set_after_mandatory_cover", list(selected_term_set))
-
     # A5: attempt to add optional terms up to MAX_TERMS by adding best-gain bullets
     # collect remaining optional terms
     optional_terms_all = [t for t in resume_terms if t not in selected_term_set]
-    # --- DEBUG ---
-    debug_log(debug_info, "A5_selected_term_set_before_optional", list(selected_term_set))
     # greedy until reach MAX_TERMS
     while len(selected_term_set) < MAX_TERMS:
         best_bid = None
@@ -796,9 +728,6 @@ def filter_and_rank_bullets(master_resume, extract):
             selected_term_set.update(bullet_index[best_bid].get("skills_used", []) + bullet_index[best_bid].get("keyword_used", []))
         else:
             break
-
-    # --- DEBUG ---
-    debug_log(debug_info, "A5_selected_term_set_after_optional", list(selected_term_set))
 
     # ---------- PHASE B: trimming, restoration, apply company caps ----------
     # first, construct selected bullets list
@@ -830,8 +759,6 @@ def filter_and_rank_bullets(master_resume, extract):
 
     # B3: find lost terms (coverage 0) and try to restore by adding bullets (prefer best bullet_weight)
     lost_terms = [t for t, cnt in term_coverage_count.items() if cnt <= 0 and t in selected_term_set]
-    # --- DEBUG ---
-    debug_log(debug_info, "B3_lost_terms", list(lost_terms))
     restored = []
     for t in lost_terms:
         candidates = term_to_bullets.get(t, set())
@@ -853,9 +780,6 @@ def filter_and_rank_bullets(master_resume, extract):
                 term_coverage_count[tt] += 1
             restored.append((t, best_bid))
 
-    # --- DEBUG ---
-    debug_log(debug_info, "B3_selected_bullets_before_caps", [b.get("id") for b in selected_bullets])
-
     # B4: apply per-company caps NOW (final pruning)
     # first compute company_caps if not already (we computed earlier in older code; recompute reliably)
     company_caps = {}
@@ -874,7 +798,6 @@ def filter_and_rank_bullets(master_resume, extract):
         sel_by_company[ck].append(b)
 
     # For each company, if too many bullets -> iteratively remove bullets with minimal penalty
-    removals = []
     for ck, blist in sel_by_company.items():
         cap = company_caps.get(ck, 1)
         while len(blist) > cap:
@@ -918,16 +841,10 @@ def filter_and_rank_bullets(master_resume, extract):
             selected_bullet_ids.discard(bid_to_remove)
             for t in brem.get("skills_used", []) + brem.get("keyword_used", []):
                 term_coverage_count[t] -= 1
-            removals.append((ck, bid_to_remove))
         sel_by_company[ck] = blist
-
-    # --- DEBUG ---
-    debug_log(debug_info, "B4_removals_before_final", [r[1] for r in removals])
 
     # Rebuild final_bullets list from selected_bullet_ids, preserving original company order and per-company sorting
     final_bullets = [bullet_index[bid] for bid in sorted(selected_bullet_ids) if bid in bullet_index]
-    # --- DEBUG ---
-    debug_log(debug_info, "B4_final_bullets_before_trim", [b.get("id") for b in final_bullets])
     # ensure each bullet only contains terms that remain covered and in selected_term_set
     for b in final_bullets:
         terms = [t for t in (b.get("skills_used", []) + b.get("keyword_used", [])) if term_coverage_count.get(t, 0) > 0 and t in selected_term_set]
@@ -936,9 +853,6 @@ def filter_and_rank_bullets(master_resume, extract):
         chosen = terms_sorted[:MAX_TERMS_PER_BULLET]
         b["skills_used"] = [t for t in chosen if skill_type_map.get(t.lower()) in ["hard", "soft"]]
         b["keyword_used"] = [t for t in chosen if skill_type_map.get(t.lower()) == "keyword"]
-
-    # --- DEBUG ---
-    debug_log(debug_info, "B4_final_bullets_before_phase10", [b.get("id") for b in final_bullets])
 
     # ---------- 10. Формируем адаптированные skills и keywords ----------
     adapted_hard = {}
@@ -965,11 +879,6 @@ def filter_and_rank_bullets(master_resume, extract):
             if b_id not in target_dict[root]["confirmed_by"]:
                 target_dict[root]["confirmed_by"].append(b_id)
 
-    # --- DEBUG ---
-    debug_log(debug_info, "10_adapted_hard", adapted_hard)
-    debug_log(debug_info, "10_adapted_soft", adapted_soft)
-    debug_log(debug_info, "10_adapted_keywords", adapted_keywords)
-
     # ---------- 11. Восстанавливаем experience ----------
     bullet_map = {b["id"]: b for b in final_bullets}
     restored_experience = []
@@ -984,15 +893,6 @@ def filter_and_rank_bullets(master_resume, extract):
         terms = b.get("skills_used", []) + b.get("keyword_used", [])
         extract_terms = [t for t in terms if t in mandatory_terms or t in nice_terms]
         extract_priorities = [priority_map.get(t.lower(), 1000) for t in extract_terms]
-        
-        # DEBUG: покажем ключ для каждого буллета
-        debug_log(debug_info, "bullet_sort_debug", {
-            "bullet_id": b.get("id"),
-            "terms": terms,
-            "extract_terms": extract_terms,
-            "extract_priorities": extract_priorities,
-            "weight": bullet_weight.get(b.get("id"), None)
-        })
         
         if extract_priorities:
             return (0, min(extract_priorities))  # приоритет по экстракту
@@ -1032,8 +932,6 @@ def filter_and_rank_bullets(master_resume, extract):
 
     if "job_title" in extract:
         adapted_resume["desired_positions"] = [extract["job_title"]]
-
-    adapted_resume["debug"] = debug_info
 
     return adapted_resume
 
