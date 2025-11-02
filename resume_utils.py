@@ -883,8 +883,17 @@ def filter_and_rank_bullets(master_resume, extract):
             loss_scores = {}
             for b in blist:
                 bid = b.get("id")
+                terms = b.get("skills_used", []) + b.get("keyword_used", [])
+
+                # --- PATCH: защита mandatory + nice-to-have ---
+                protected_terms = [t for t in terms if t in mandatory_terms or t in nice_terms]
+                if any(term_coverage_count.get(t, 0) == 1 for t in protected_terms):
+                    # буллет содержит уникальный обязательный или nice термин → нельзя удалять
+                    loss_scores[bid] = float("inf")
+                    continue  # этот буллет нельзя удалять
+
+                # обычная формула для остальных
                 loss = 0.0
-                terms = (b.get("skills_used", []) + b.get("keyword_used", []))
                 for t in terms:
                     w = term_weight.get(t, 0)
                     if term_coverage_count.get(t, 0) == 1:
@@ -893,36 +902,14 @@ def filter_and_rank_bullets(master_resume, extract):
                     else:
                         loss += w
 
-                # --- PATCH: взвешиваем по приоритету и длине ---
+                # небольшая корректировка на длину буллета
                 if len(terms) > 1:
                     loss = loss / (len(terms) ** 0.3)
-                
+
                 loss_scores[bid] = loss
-        
-            # === DEBUG START ===
-            if any(b.get("id") == 37 for b in blist):
-                b37 = next((b for b in blist if b.get("id") == 37), None)
-                if b37:
-                    debug_log(debug_info, "debug_bullet_37_state", {
-                        "bullet_id": b37.get("id"),
-                        "bullet_terms": b37.get("skills_used", []) + b37.get("keyword_used", []),
-                        "term_weights": {t: term_weight.get(t, None) for t in b37.get("skills_used", []) + b37.get("keyword_used", [])},
-                        "term_coverage_count": {t: term_coverage_count.get(t, None) for t in b37.get("skills_used", []) + b37.get("keyword_used", [])},
-                        "loss_score": loss_scores.get(37)
-                    })
-            # === DEBUG END ===
 
             # pick bullet with minimal loss (tie-breaker: lower bullet_weight)
             bid_to_remove = min(loss_scores.keys(), key=lambda bid: (loss_scores[bid], bullet_weight.get(bid, 0)))
-
-            # --- DEBUG removal choice ---
-            debug_log(debug_info, f"removal_choice_company_{ck}", {
-                "cap": cap,
-                "blist_ids": [b.get("id") for b in blist],
-                "loss_scores": {bid: loss_scores[bid] for bid in loss_scores},
-                "bullet_weights": {bid: bullet_weight.get(bid, 0) for bid in loss_scores},
-                "chosen_bid_to_remove": bid_to_remove
-            })
 
             # remove it from blist and update structures
             brem = next((b for b in blist if b.get("id") == bid_to_remove), None)
