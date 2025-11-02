@@ -909,6 +909,16 @@ def filter_and_rank_bullets(master_resume, extract):
 
             # pick bullet with minimal loss (tie-breaker: lower bullet_weight)
             bid_to_remove = min(loss_scores.keys(), key=lambda bid: (loss_scores[bid], bullet_weight.get(bid, 0)))
+
+            # --- DEBUG removal choice ---
+            debug_log(debug_info, f"removal_choice_company_{ck}", {
+                "cap": cap,
+                "blist_ids": [b.get("id") for b in blist],
+                "loss_scores": {bid: loss_scores[bid] for bid in loss_scores},
+                "bullet_weights": {bid: bullet_weight.get(bid, 0) for bid in loss_scores},
+                "chosen_bid_to_remove": bid_to_remove
+            })
+
             # remove it from blist and update structures
             brem = next((b for b in blist if b.get("id") == bid_to_remove), None)
             if not brem:
