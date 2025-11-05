@@ -1492,7 +1492,6 @@ def simplify_extract(extract: dict) -> str:
     # Красиво форматированный JSON, чтобы легче читать при отладке
     return json.dumps(simplified, ensure_ascii=False, indent=2)
 
-model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def resume_match_score(job_text: str, resume_text: str) -> float:
     """Вычисляет схожесть текста вакансии и резюме на основе TF-IDF."""
