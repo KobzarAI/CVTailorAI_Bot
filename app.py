@@ -205,10 +205,6 @@ async def push_bullets_endpoint(request: Request):
 
 @app.post("/resume_match_score")
 async def resume_match_score_endpoint(request: Request):
-    """
-    Вебхук для оценки сходства между вакансией и резюме.
-    Ожидает JSON с ключами 'job_text' и 'resume_text'.
-    """
     data = await request.json()
     job_text = data.get("job_text")
     resume_text = data.get("resume_text")

@@ -4,7 +4,9 @@ from collections import defaultdict, Counter
 import copy
 from itertools import combinations
 from math import floor, ceil
-from sentence_transformers import SentenceTransformer, util
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
 
 def merge_jsons(master_resume, terms):
     err_msg_list = []
@@ -1493,7 +1495,8 @@ def simplify_extract(extract: dict) -> str:
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def resume_match_score(job_text: str, resume_text: str) -> float:
-    emb_job = model.encode(job_text, convert_to_tensor=True)
-    emb_resume = model.encode(resume_text, convert_to_tensor=True)
-    cosine_score = util.cos_sim(emb_job, emb_resume)
-    return float(cosine_score.item())
+    """Вычисляет схожесть текста вакансии и резюме на основе TF-IDF."""
+    vectorizer = TfidfVectorizer(stop_words='english')
+    tfidf = vectorizer.fit_transform([job_text, resume_text])
+    score = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
+    return float(score)
