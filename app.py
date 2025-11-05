@@ -20,7 +20,8 @@ from resume_utils import (
     cv2text,
     extract_bullets,
     push_bullets,
-    simplify_extract
+    simplify_extract,
+    resume_match_score
 )
 
 app = FastAPI()
@@ -200,3 +201,23 @@ async def push_bullets_endpoint(request: Request):
     data = await request.json()
     updated_resume = push_bullets(data)
     return JSONResponse(content=updated_resume)
+
+
+@app.post("/resume_match_score")
+async def resume_match_score_endpoint(request: Request):
+    """
+    Вебхук для оценки сходства между вакансией и резюме.
+    Ожидает JSON с ключами 'job_text' и 'resume_text'.
+    """
+    data = await request.json()
+    job_text = data.get("job_text")
+    resume_text = data.get("resume_text")
+
+    if not job_text or not resume_text:
+        return JSONResponse(
+            content={"error": "Both 'job_text' and 'resume_text' must be provided."},
+            status_code=400
+        )
+
+    score = resume_match_score(job_text, resume_text)
+    return JSONResponse(content={"match_score": round(score, 4)})

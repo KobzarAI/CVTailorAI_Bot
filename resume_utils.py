@@ -4,6 +4,7 @@ from collections import defaultdict, Counter
 import copy
 from itertools import combinations
 from math import floor, ceil
+from sentence_transformers import SentenceTransformer, util
 
 def merge_jsons(master_resume, terms):
     err_msg_list = []
@@ -1488,3 +1489,11 @@ def simplify_extract(extract: dict) -> str:
     }
     # Красиво форматированный JSON, чтобы легче читать при отладке
     return json.dumps(simplified, ensure_ascii=False, indent=2)
+
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+def resume_match_score(job_text: str, resume_text: str) -> float:
+    emb_job = model.encode(job_text, convert_to_tensor=True)
+    emb_resume = model.encode(resume_text, convert_to_tensor=True)
+    cosine_score = util.cos_sim(emb_job, emb_resume)
+    return float(cosine_score.item())
