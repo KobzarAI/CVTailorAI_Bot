@@ -4,10 +4,9 @@ from collections import defaultdict, Counter
 import copy
 from itertools import combinations
 from math import floor, ceil
-import numpy as np
-from sentence_transformers import SentenceTransformer
-import re
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import re
 
 
 def merge_jsons(master_resume, terms):
@@ -1523,24 +1522,35 @@ def extract_keywords(text, top_n=30):
 
 
 def compute_ats_metrics(job_text, resume_text):
-    """Возвращает словарь с ATS-метриками."""
+    def extract_keywords(text, top_n=30):
+        text = text.lower()
+        text = re.sub(r'[^a-z0-9\s\-\+]', ' ', text)
+        words = text.split()
+        stopwords = set([
+            'and','or','the','to','for','with','of','in','on','at','as','a','an',
+            'by','from','this','that','is','are','be','have','has','was','will','we',
+            'it','our','your','you','their','they','them','about','more','than'
+        ])
+        keywords = [w for w in words if len(w) > 2 and w not in stopwords]
+        freq = {}
+        for w in keywords:
+            freq[w] = freq.get(w, 0) + 1
+        sorted_kw = sorted(freq.items(), key=lambda x: x[1], reverse=True)
+        return [k for k, _ in sorted_kw[:top_n]]
+
     job_kw = extract_keywords(job_text)
     resume_kw = extract_keywords(resume_text)
-
-    if not job_kw or not resume_kw:
-        return {"ats_score": 0, "semantic": 0, "recall": 0, "precision": 0}
 
     job_set, resume_set = set(job_kw), set(resume_kw)
     intersection = job_set & resume_set
 
-    recall = len(intersection) / len(job_set)
-    precision = len(intersection) / len(resume_set)
+    recall = len(intersection) / len(job_set) if job_set else 0
+    precision = len(intersection) / len(resume_set) if resume_set else 0
 
-    # Векторизация
-    emb_job = model.encode(job_text)
-    emb_resume = model.encode(resume_text)
-
-    semantic = cosine_similarity(emb_job, emb_resume)
+    # Лёгкое текстовое сравнение
+    vectorizer = TfidfVectorizer(max_features=500)
+    tfidf = vectorizer.fit_transform([job_text, resume_text])
+    semantic = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
 
     ats_score = 100 * (0.6 * semantic + 0.3 * recall + 0.1 * precision)
 
@@ -1550,6 +1560,4 @@ def compute_ats_metrics(job_text, resume_text):
         "recall": round(float(recall), 4),
         "precision": round(float(precision), 4),
         "overlap_keywords": list(intersection),
-        "job_keywords": job_kw,
-        "resume_keywords": resume_kw,
     }
