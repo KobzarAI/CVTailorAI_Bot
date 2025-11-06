@@ -4,9 +4,9 @@ from collections import defaultdict, Counter
 import copy
 from itertools import combinations
 from math import floor, ceil
-from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 from sentence_transformers import SentenceTransformer
-import re, asyncio
+import re
 
 
 def merge_jsons(master_resume, terms):
@@ -1494,12 +1494,18 @@ def simplify_extract(extract: dict) -> str:
     return json.dumps(simplified, ensure_ascii=False, indent=2)
 
 
-# Легкая модель, чтобы не вылететь по памяти на Render Free (512 МБ)
-model = SentenceTransformer('sentence-transformers/all-MiniLM-L12-v2')
+# Ещё более лёгкая модель — экономит ~150 МБ
+model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+
+
+def cosine_similarity(a, b):
+    """Ручная реализация cosine similarity без sklearn"""
+    a, b = np.array(a), np.array(b)
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
 
 def extract_keywords(text, top_n=30):
-    """Простая эвристика для вытаскивания ключевых терминов без KeyBERT (экономит память)."""
+    """Простая эвристика для извлечения ключевых слов."""
     text = text.lower()
     text = re.sub(r'[^a-z0-9\s\-\+]', ' ', text)
     words = text.split()
@@ -1515,8 +1521,9 @@ def extract_keywords(text, top_n=30):
     sorted_kw = sorted(freq.items(), key=lambda x: x[1], reverse=True)
     return [k for k, _ in sorted_kw[:top_n]]
 
+
 def compute_ats_metrics(job_text, resume_text):
-    """Возвращает словарь с детализированными метриками."""
+    """Возвращает словарь с ATS-метриками."""
     job_kw = extract_keywords(job_text)
     resume_kw = extract_keywords(resume_text)
 
@@ -1529,9 +1536,11 @@ def compute_ats_metrics(job_text, resume_text):
     recall = len(intersection) / len(job_set)
     precision = len(intersection) / len(resume_set)
 
-    emb_job = model.encode(job_text, convert_to_tensor=False)
-    emb_resume = model.encode(resume_text, convert_to_tensor=False)
-    semantic = cosine_similarity([emb_job], [emb_resume])[0][0]
+    # Векторизация
+    emb_job = model.encode(job_text)
+    emb_resume = model.encode(resume_text)
+
+    semantic = cosine_similarity(emb_job, emb_resume)
 
     ats_score = 100 * (0.6 * semantic + 0.3 * recall + 0.1 * precision)
 
