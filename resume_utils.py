@@ -1497,9 +1497,6 @@ def simplify_extract(extract: dict) -> str:
 
 # Ещё более лёгкая модель — экономит ~150 МБ
 model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-# тестовая загрузка модели
-model = SentenceTransformer('all-MiniLM-L6-v2')
-
 
 def cosine_similarity(a, b):
     """Ручная реализация cosine similarity без sklearn"""
