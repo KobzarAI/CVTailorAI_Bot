@@ -4,8 +4,9 @@ from collections import defaultdict, Counter
 import copy
 from itertools import combinations
 from math import floor, ceil
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer
+import re, asyncio
 
 
 def merge_jsons(master_resume, terms):
@@ -1493,9 +1494,53 @@ def simplify_extract(extract: dict) -> str:
     return json.dumps(simplified, ensure_ascii=False, indent=2)
 
 
-def resume_match_score(job_text: str, resume_text: str) -> float:
-    """Вычисляет схожесть текста вакансии и резюме на основе TF-IDF."""
-    vectorizer = TfidfVectorizer(stop_words='english')
-    tfidf = vectorizer.fit_transform([job_text, resume_text])
-    score = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
-    return float(score)
+# Легкая модель, чтобы не вылететь по памяти на Render Free (512 МБ)
+model = SentenceTransformer('sentence-transformers/all-MiniLM-L12-v2')
+
+
+def extract_keywords(text, top_n=30):
+    """Простая эвристика для вытаскивания ключевых терминов без KeyBERT (экономит память)."""
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9\s\-\+]', ' ', text)
+    words = text.split()
+    stopwords = set([
+        'and','or','the','to','for','with','of','in','on','at','as','a','an',
+        'by','from','this','that','is','are','be','have','has','was','will','we',
+        'it','our','your','you','their','they','them','about','more','than'
+    ])
+    keywords = [w for w in words if len(w) > 2 and w not in stopwords]
+    freq = {}
+    for w in keywords:
+        freq[w] = freq.get(w, 0) + 1
+    sorted_kw = sorted(freq.items(), key=lambda x: x[1], reverse=True)
+    return [k for k, _ in sorted_kw[:top_n]]
+
+def compute_ats_metrics(job_text, resume_text):
+    """Возвращает словарь с детализированными метриками."""
+    job_kw = extract_keywords(job_text)
+    resume_kw = extract_keywords(resume_text)
+
+    if not job_kw or not resume_kw:
+        return {"ats_score": 0, "semantic": 0, "recall": 0, "precision": 0}
+
+    job_set, resume_set = set(job_kw), set(resume_kw)
+    intersection = job_set & resume_set
+
+    recall = len(intersection) / len(job_set)
+    precision = len(intersection) / len(resume_set)
+
+    emb_job = model.encode(job_text, convert_to_tensor=False)
+    emb_resume = model.encode(resume_text, convert_to_tensor=False)
+    semantic = cosine_similarity([emb_job], [emb_resume])[0][0]
+
+    ats_score = 100 * (0.6 * semantic + 0.3 * recall + 0.1 * precision)
+
+    return {
+        "ats_score": round(float(ats_score), 2),
+        "semantic": round(float(semantic), 4),
+        "recall": round(float(recall), 4),
+        "precision": round(float(precision), 4),
+        "overlap_keywords": list(intersection),
+        "job_keywords": job_kw,
+        "resume_keywords": resume_kw,
+    }

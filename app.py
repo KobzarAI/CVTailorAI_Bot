@@ -21,7 +21,7 @@ from resume_utils import (
     extract_bullets,
     push_bullets,
     simplify_extract,
-    resume_match_score
+    compute_ats_metrics
 )
 
 app = FastAPI()
@@ -203,17 +203,18 @@ async def push_bullets_endpoint(request: Request):
     return JSONResponse(content=updated_resume)
 
 
-@app.post("/resume_match_score")
-async def resume_match_score_endpoint(request: Request):
-    data = await request.json()
-    job_text = data.get("job_text")
-    resume_text = data.get("resume_text")
+@app.post("/ats_score")
+async def ats_score(request: Request):
+    """Webhook endpoint: получает JSON с полями job_text и resume_text, возвращает JSON с результатом."""
+    try:
+        data = await request.json()
+        job_text = data.get("job_text", "")
+        resume_text = data.get("resume_text", "")
+        if not job_text or not resume_text:
+            return JSONResponse({"error": "Both job_text and resume_text are required."}, status_code=400)
 
-    if not job_text or not resume_text:
-        return JSONResponse(
-            content={"error": "Both 'job_text' and 'resume_text' must be provided."},
-            status_code=400
-        )
+        metrics = compute_ats_metrics(job_text, resume_text)
+        return JSONResponse(metrics)
 
-    score = resume_match_score(job_text, resume_text)
-    return JSONResponse(content={"match_score": round(score, 4)})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
