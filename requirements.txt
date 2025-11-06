@@ -1,5 +1,4 @@
 fastapi
 uvicorn
-sentence-transformers==2.2.2
-scikit-learn==1.3.2 --only-binary :all:
+sentence-transformers==3.2.1
 numpy==1.26.4

@@ -218,3 +218,14 @@ async def ats_score(request: Request):
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+    
+
+@app.get("/test_model")
+def test_model():
+    try:
+        emb1 = model.encode("Job description example")
+        emb2 = model.encode("Resume example")
+        sim = cosine_similarity([emb1], [emb2])[0][0]
+        return {"status": "ok", "similarity": round(float(sim), 4)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

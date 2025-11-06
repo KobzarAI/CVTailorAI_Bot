@@ -7,6 +7,7 @@ from math import floor, ceil
 import numpy as np
 from sentence_transformers import SentenceTransformer
 import re
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 def merge_jsons(master_resume, terms):
@@ -1496,6 +1497,8 @@ def simplify_extract(extract: dict) -> str:
 
 # Ещё более лёгкая модель — экономит ~150 МБ
 model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+# тестовая загрузка модели
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
 
 def cosine_similarity(a, b):
