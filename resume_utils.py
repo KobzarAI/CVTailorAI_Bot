@@ -1494,6 +1494,9 @@ def simplify_extract(extract: dict) -> str:
     return json.dumps(simplified, ensure_ascii=False, indent=2)
 
 
+# Легкая версия модели, чтобы не вылететь по памяти на Render (512MB)
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
 def cosine_similarity(a, b):
     """Ручная реализация cosine similarity без sklearn"""
     a, b = np.array(a), np.array(b)
@@ -1517,6 +1520,8 @@ def extract_keywords(text, top_n=30):
     sorted_kw = sorted(freq.items(), key=lambda x: x[1], reverse=True)
     return [k for k, _ in sorted_kw[:top_n]]
 
+
+compute_ats_metrics
 
 def compute_ats_metrics(job_text, resume_text):
     def extract_keywords(text, top_n=30):
