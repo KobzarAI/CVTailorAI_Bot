@@ -1571,8 +1571,7 @@ def compute_ats_metrics(job_text, resume_text):
     """
     Оценивает схожесть резюме с вакансией:
     - ключевые слова (recall, precision)
-    - семантическое сходство через HuggingFace модель
-    - контекстный вес (hard/soft skills)
+    - семантическое сходство через HuggingFace модель или TF-IDF fallback
     """
     job_kw = extract_keywords(job_text)
     resume_kw = extract_keywords(resume_text)
@@ -1580,10 +1579,9 @@ def compute_ats_metrics(job_text, resume_text):
     if not job_kw or not resume_kw:
         return {"ats_score": 0, "semantic": 0, "recall": 0, "precision": 0}
 
+    # --- Ключевые метрики
     job_set, resume_set = set(job_kw), set(resume_kw)
     intersection = job_set & resume_set
-
-    # --- Ключевые метрики
     recall = len(intersection) / len(job_set)
     precision = len(intersection) / len(resume_set)
 
@@ -1596,27 +1594,14 @@ def compute_ats_metrics(job_text, resume_text):
         tfidf = vectorizer.fit_transform([job_text, resume_text])
         semantic = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
 
-    # --- Контекстный вес
-    context_weight_map = {
-        "python": 1.5,
-        "sql": 1.2,
-        "machine learning": 1.3,
-        "communication": 0.8,
-        "teamwork": 0.7,
-    }
-    weighted_intersection = sum(context_weight_map.get(k.lower(), 1) for k in intersection)
-    weighted_total = sum(context_weight_map.get(k.lower(), 1) for k in job_set)
-    context_score = weighted_intersection / weighted_total if weighted_total else 0
-
-    # --- Финальный скор
-    ats_score = 100 * (0.55 * semantic + 0.25 * recall + 0.1 * precision + 0.1 * context_score)
+    # --- Итоговый ATS-скор
+    ats_score = 100 * (0.55 * semantic + 0.25 * recall + 0.2 * precision)
 
     return {
-        "ats_score(70-90)": round(float(ats_score), 2),
-        "semantic(coverage_incl_synonyms_0.6-0.85)": round(float(semantic), 4),
-        "recall(JD->CV_0.6-0.85)": round(float(recall), 4),
-        "precision(density_of_terms_0.4-0.7)": round(float(precision), 4),
-        "context_score(kw_confirmed_0.5-0.8)": round(float(context_score), 4),
+        "ats_score(approx)": round(float(ats_score), 2),
+        "semantic": round(float(semantic), 4),
+        "recall": round(float(recall), 4),
+        "precision": round(float(precision), 4),
         "overlap_keywords": list(intersection),
         "job_keywords": job_kw,
         "resume_keywords": resume_kw,
