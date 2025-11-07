@@ -4,10 +4,10 @@ from collections import defaultdict, Counter
 import copy
 from itertools import combinations
 from math import floor, ceil
+import re
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import re
-
 
 def merge_jsons(master_resume, terms):
     err_msg_list = []
