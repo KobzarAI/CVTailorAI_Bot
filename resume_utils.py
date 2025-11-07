@@ -4,9 +4,9 @@ from collections import defaultdict, Counter
 import copy
 from itertools import combinations
 from math import floor, ceil
-import re
-from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import re
 
 
 def merge_jsons(master_resume, terms):
@@ -1494,17 +1494,8 @@ def simplify_extract(extract: dict) -> str:
     return json.dumps(simplified, ensure_ascii=False, indent=2)
 
 
-# Легкая версия модели, чтобы не вылететь по памяти на Render (512MB)
-model = SentenceTransformer('all-MiniLM-L6-v2')
-
-def cosine_similarity(a, b):
-    """Ручная реализация cosine similarity без sklearn"""
-    a, b = np.array(a), np.array(b)
-    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
-
-
 def extract_keywords(text, top_n=30):
-    """Простая эвристика для извлечения ключевых слов."""
+    """Простая эвристика для вытаскивания ключевых терминов."""
     text = text.lower()
     text = re.sub(r'[^a-z0-9\s\-\+]', ' ', text)
     words = text.split()
@@ -1522,36 +1513,26 @@ def extract_keywords(text, top_n=30):
 
 
 def compute_ats_metrics(job_text, resume_text):
-    def extract_keywords(text, top_n=30):
-        text = text.lower()
-        text = re.sub(r'[^a-z0-9\s\-\+]', ' ', text)
-        words = text.split()
-        stopwords = set([
-            'and','or','the','to','for','with','of','in','on','at','as','a','an',
-            'by','from','this','that','is','are','be','have','has','was','will','we',
-            'it','our','your','you','their','they','them','about','more','than'
-        ])
-        keywords = [w for w in words if len(w) > 2 and w not in stopwords]
-        freq = {}
-        for w in keywords:
-            freq[w] = freq.get(w, 0) + 1
-        sorted_kw = sorted(freq.items(), key=lambda x: x[1], reverse=True)
-        return [k for k, _ in sorted_kw[:top_n]]
-
+    """Оценивает схожесть резюме с вакансией без SentenceTransformer."""
     job_kw = extract_keywords(job_text)
     resume_kw = extract_keywords(resume_text)
 
+    if not job_kw or not resume_kw:
+        return {"ats_score": 0, "semantic": 0, "recall": 0, "precision": 0}
+
+    # Множества ключевых слов
     job_set, resume_set = set(job_kw), set(resume_kw)
     intersection = job_set & resume_set
 
-    recall = len(intersection) / len(job_set) if job_set else 0
-    precision = len(intersection) / len(resume_set) if resume_set else 0
+    recall = len(intersection) / len(job_set)
+    precision = len(intersection) / len(resume_set)
 
-    # Лёгкое текстовое сравнение
-    vectorizer = TfidfVectorizer(max_features=500)
+    # Семантическая близость через TF-IDF
+    vectorizer = TfidfVectorizer()
     tfidf = vectorizer.fit_transform([job_text, resume_text])
     semantic = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
 
+    # Итоговый скор
     ats_score = 100 * (0.6 * semantic + 0.3 * recall + 0.1 * precision)
 
     return {
@@ -1560,4 +1541,6 @@ def compute_ats_metrics(job_text, resume_text):
         "recall": round(float(recall), 4),
         "precision": round(float(precision), 4),
         "overlap_keywords": list(intersection),
+        "job_keywords": job_kw,
+        "resume_keywords": resume_kw,
     }

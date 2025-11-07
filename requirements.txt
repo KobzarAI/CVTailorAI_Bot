@@ -2,4 +2,3 @@ fastapi
 uvicorn
 scikit-learn
 numpy
-sentence-transformers>=3.2.1
