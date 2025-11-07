@@ -1521,8 +1521,6 @@ def extract_keywords(text, top_n=30):
     return [k for k, _ in sorted_kw[:top_n]]
 
 
-compute_ats_metrics
-
 def compute_ats_metrics(job_text, resume_text):
     def extract_keywords(text, top_n=30):
         text = text.lower()
