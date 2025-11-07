@@ -23,6 +23,9 @@ from resume_utils import (
     simplify_extract,
     compute_ats_metrics
 )
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
 
 app = FastAPI()
 
