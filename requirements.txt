@@ -2,3 +2,5 @@ fastapi
 uvicorn
 scikit-learn
 numpy
+huggingface_hub
+requests

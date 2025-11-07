@@ -21,7 +21,8 @@ from resume_utils import (
     extract_bullets,
     push_bullets,
     simplify_extract,
-    compute_ats_metrics
+    compute_ats_metrics,
+    cosine_similarity
 )
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity

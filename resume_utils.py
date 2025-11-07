@@ -4,10 +4,14 @@ from collections import defaultdict, Counter
 import copy
 from itertools import combinations
 from math import floor, ceil
+from huggingface_hub import InferenceClient
+import os
+import requests
 import re
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
 
 def merge_jsons(master_resume, terms):
     err_msg_list = []
@@ -1494,6 +1498,57 @@ def simplify_extract(extract: dict) -> str:
     return json.dumps(simplified, ensure_ascii=False, indent=2)
 
 
+ACTION_WORDS = [
+    "developed", "implemented", "built", "designed", "optimized", "automated",
+    "created", "integrated", "maintained", "improved", "deployed", "enhanced"
+]
+
+# токен храним в переменной окружения на Render
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+# Клиент Hugging Face
+client = InferenceClient(
+    provider="hf-inference",
+    api_key=os.getenv("HF_TOKEN"),
+)
+
+def get_semantic_similarity(job_text: str, resume_text: str) -> float:
+    """Запрашивает у Hugging Face API семантическую схожесть между вакансия и резюме"""
+    try:
+        result = client.sentence_similarity(
+            {
+                "source_sentence": job_text,
+                "sentences": [resume_text],
+            },
+            model="sentence-transformers/all-MiniLM-L6-v2",
+        )
+        # Возвращает число от 0 до 1
+        return float(result[0])
+    except Exception as e:
+        print("HF API Error:", e)
+        return 0.0
+    
+
+def context_weighting(text: str, keywords: list[str]) -> float:
+    """Добавляет вес, если ключевые слова встречаются в активном контексте"""
+    text = text.lower()
+    score = 0
+    total = 0
+    for kw in keywords:
+        kw = kw.lower()
+        # Ищем фразы типа "developed ... python" или "python ... developed"
+        for aw in ACTION_WORDS:
+            if re.search(rf"{aw}\W+(?:\w+\W+){{0,5}}{kw}", text):
+                score += 1.5  # бонус за применение
+            elif re.search(rf"{kw}\W+(?:\w+\W+){{0,5}}{aw}", text):
+                score += 1.5
+        # если просто встречается
+        if kw in text:
+            score += 1
+        total += 1
+    return min(score / total, 1.0) if total > 0 else 0.0
+
+
 def extract_keywords(text, top_n=30):
     """Простая эвристика для вытаскивания ключевых терминов."""
     text = text.lower()
@@ -1513,33 +1568,55 @@ def extract_keywords(text, top_n=30):
 
 
 def compute_ats_metrics(job_text, resume_text):
-    """Оценивает схожесть резюме с вакансией без SentenceTransformer."""
+    """
+    Оценивает схожесть резюме с вакансией:
+    - ключевые слова (recall, precision)
+    - семантическое сходство через HuggingFace модель
+    - контекстный вес (hard/soft skills)
+    """
     job_kw = extract_keywords(job_text)
     resume_kw = extract_keywords(resume_text)
 
     if not job_kw or not resume_kw:
         return {"ats_score": 0, "semantic": 0, "recall": 0, "precision": 0}
 
-    # Множества ключевых слов
     job_set, resume_set = set(job_kw), set(resume_kw)
     intersection = job_set & resume_set
 
+    # --- Ключевые метрики
     recall = len(intersection) / len(job_set)
     precision = len(intersection) / len(resume_set)
 
-    # Семантическая близость через TF-IDF
-    vectorizer = TfidfVectorizer()
-    tfidf = vectorizer.fit_transform([job_text, resume_text])
-    semantic = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
+    # --- Семантическая близость (через HF API)
+    semantic = get_semantic_similarity(job_text, resume_text)
 
-    # Итоговый скор
-    ats_score = 100 * (0.6 * semantic + 0.3 * recall + 0.1 * precision)
+    # fallback на TF-IDF, если HF не ответил
+    if semantic == 0.0:
+        vectorizer = TfidfVectorizer()
+        tfidf = vectorizer.fit_transform([job_text, resume_text])
+        semantic = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
+
+    # --- Контекстный вес
+    context_weight_map = {
+        "python": 1.5,
+        "sql": 1.2,
+        "machine learning": 1.3,
+        "communication": 0.8,
+        "teamwork": 0.7,
+    }
+    weighted_intersection = sum(context_weight_map.get(k.lower(), 1) for k in intersection)
+    weighted_total = sum(context_weight_map.get(k.lower(), 1) for k in job_set)
+    context_score = weighted_intersection / weighted_total if weighted_total else 0
+
+    # --- Финальный скор
+    ats_score = 100 * (0.55 * semantic + 0.25 * recall + 0.1 * precision + 0.1 * context_score)
 
     return {
         "ats_score": round(float(ats_score), 2),
         "semantic": round(float(semantic), 4),
         "recall": round(float(recall), 4),
         "precision": round(float(precision), 4),
+        "context_score": round(float(context_score), 4),
         "overlap_keywords": list(intersection),
         "job_keywords": job_kw,
         "resume_keywords": resume_kw,
