@@ -1516,10 +1516,8 @@ def get_semantic_similarity(job_text: str, resume_text: str) -> float:
     """Запрашивает у Hugging Face API семантическую схожесть между вакансия и резюме"""
     try:
         result = client.sentence_similarity(
-            {
-                "source_sentence": job_text,
-                "sentences": [resume_text],
-            },
+            source_sentence=job_text,
+            other_sentences=[resume_text],
             model="sentence-transformers/all-MiniLM-L6-v2",
         )
         # Возвращает число от 0 до 1
