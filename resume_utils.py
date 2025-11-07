@@ -4,9 +4,9 @@ from collections import defaultdict, Counter
 import copy
 from itertools import combinations
 from math import floor, ceil
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 import re
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 def merge_jsons(master_resume, terms):
