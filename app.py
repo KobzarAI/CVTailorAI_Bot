@@ -22,10 +22,9 @@ from resume_utils import (
     push_bullets,
     simplify_extract,
     compute_ats_metrics,
-    cosine_similarity
+    analyze_job_description
 )
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 
 app = FastAPI()
@@ -224,12 +223,22 @@ async def ats_score(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
     
 
-@app.get("/test_model")
-def test_model():
-    try:
-        vectorizer = TfidfVectorizer()
-        tfidf = vectorizer.fit_transform(["Job description example", "Resume example"])
-        sim = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
-        return {"status": "ok", "similarity": round(float(sim), 4)}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+@app.post("/analyze_job")
+async def analyze_job_endpoint(request: Request):
+    """
+    Эндпоинт для анализа вакансии.
+    Принимает JSON:
+    {
+      "job_description": "текст вакансии",
+      "extract": {...}
+    }
+    """
+    data = await request.json()
+    job_description = data.get("job_description")
+    extract = data.get("extract")
+
+    if not job_description or not extract:
+        return JSONResponse(content={"error": "job_description and extract are required"}, status_code=400)
+
+    result = analyze_job_description(job_description, extract)
+    return JSONResponse(content=result)

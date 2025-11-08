@@ -11,6 +11,7 @@ import re
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from typing import Dict, Any, List
 
 
 def merge_jsons(master_resume, terms):
@@ -1605,4 +1606,47 @@ def compute_ats_metrics(job_text, resume_text):
         "resume_keywords": resume_kw,
     }
 
-    
+
+def analyze_job_description(job_description: str, extract: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Анализирует текст вакансии на наличие терминов из JSON-экстракта.
+    Возвращает статистику совпадений и список недостающих терминов.
+    """
+
+    # Приводим текст вакансии к нижнему регистру для нечувствительности к регистру
+    text = job_description.lower()
+
+    def count_found(terms: List[str]) -> (int, List[str]):
+        found = 0
+        missing = []
+        for term in terms:
+            pattern = r"\b" + re.escape(term.lower()) + r"\b"
+            if re.search(pattern, text):
+                found += 1
+            else:
+                missing.append(term)
+        return found, missing
+
+    # Собираем списки из JSON
+    mandatory_terms = extract.get("mandatory", {}).get("skills", []) + extract.get("mandatory", {}).get("keywords", [])
+    nice_to_have_terms = extract.get("nice_to_have", {}).get("skills", []) + extract.get("nice_to_have", {}).get("keywords", [])
+
+    total_terms = mandatory_terms + nice_to_have_terms
+
+    # Считаем найденные термины
+    mandatory_found, mandatory_missing = count_found(mandatory_terms)
+    nice_found, nice_missing = count_found(nice_to_have_terms)
+
+    total_found = mandatory_found + nice_found
+    total_expected = len(total_terms)
+
+    percent_found = round((total_found / total_expected) * 100, 2) if total_expected > 0 else 0.0
+
+    result = {
+        "match_percent": percent_found,  # общий процент
+        "mandatory": f"{mandatory_found}/{len(mandatory_terms)}",
+        "nice_to_have": f"{nice_found}/{len(nice_to_have_terms)}",
+        "lost": mandatory_missing + nice_missing
+    }
+
+    return result
