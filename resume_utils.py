@@ -1357,7 +1357,7 @@ def cv2text(master_resume: dict) -> str:
     # --- Блок Work History ---
     experience = master_resume.get("experience", [])
     if experience:
-        lines.append(f"\n[[h2]]Work history")
+        lines.append(f"\n[[h2]]Work experience")
 
     for exp in experience:
         company = exp.get("company", "").strip()
