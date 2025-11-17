@@ -4,6 +4,7 @@ from collections import defaultdict, Counter
 import copy
 from itertools import combinations
 from math import floor, ceil
+from datetime import datetime, date
 from huggingface_hub import InferenceClient
 import os
 import requests
@@ -1162,6 +1163,7 @@ def remove_unconfirmed_and_unused_terms(duplicates: list[str], master_resume: di
 
     return cleaned
 
+
 def normalize_master_resume(master_resume: dict) -> dict:
     """
     Приводит master_resume.json в консистентное состояние:
@@ -1170,114 +1172,320 @@ def normalize_master_resume(master_resume: dict) -> dict:
        на основе hard_skills, soft_skills и keywords с пустым confirmed_by.
     2. Гарантирует, что все skills/keywords с confirmed_by действительно
        перечислены в соответствующих буллетах. И подчищает мусорные=несуществующие ID
+       (замечание: в новой версии мы очищаем confirmed_by и не синхронизируем обратно,
+       потому что в требованиях сказано гарантировать пустые confirmed_by).
     3. Проверяет обратную связь — что все термины, перечисленные в буллетах,
-       упомянуты в confirmed_by в секции skills/keywords.
+       упомянуты в confirmed_by в секции skills/keywords. (в рамках требований
+       термы из буллетов, не найдённые в секциях — попадают в unknown.*)
+    Дополнительно: удаление дубликатов буллетов, перенумерация id, duration_years и т.д.
     """
-    # --- Шаг 0: подготовка удобных ссылок ---
-    hard_skills = master_resume.get("skills", {}).get("hard_skills", [])
-    soft_skills = master_resume.get("skills", {}).get("soft_skills", [])
-    keywords = master_resume.get("keywords", [])
-    experience = master_resume.get("experience", [])
-    unconfirmed = master_resume.get("unconfirmed", {})
-    unconfirmed_skills = set(unconfirmed.get("skills", []))
-    unconfirmed_keywords = set(unconfirmed.get("keywords", []))
-
-    # --- Шаг 0.1: дополнение ссылок ---
+    # --- Утилиты ---
     def add_https_if_missing(url: str) -> str:
+        if not isinstance(url, str):
+            return ""
         url = url.strip()
-        if url and not url.startswith("http://") and not url.startswith("https://"):
-            url = "https://" + url
+        if url and not (url.startswith("http://") or url.startswith("https://")):
+            return "https://" + url
         return url
 
-    l_linkedin = add_https_if_missing(master_resume.get("personal_info", {}).get("linkedin", ""))
-    l_portfolio = add_https_if_missing(master_resume.get("personal_info", {}).get("portfolio", ""))
+    def try_parse_date(s: str):
+        """
+        Попытка распарсить дату в нескольких распространённых форматах.
+        Возвращает date или None. Поддерживает "Present"/"now" -> handled отдельно.
+        """
+        if not s or not isinstance(s, str):
+            return None
+        s = s.strip()
+        if not s:
+            return None
+        # common representations
+        patterns = [
+            "%b %Y",   # Nov 2020
+            "%B %Y",   # November 2020
+            "%Y-%m-%d",
+            "%Y-%m",
+            "%Y",
+            "%m/%Y",
+            "%m/%d/%Y",
+            "%d %b %Y",
+            "%d %B %Y",
+        ]
+        for p in patterns:
+            try:
+                dt = datetime.strptime(s, p)
+                return dt.date()
+            except Exception:
+                continue
+        # try parsing "Month YYYY" with possible trailing commas or words
+        try:
+            # handle formats like "Nov. 2020" or "Nov, 2020"
+            cleaned = s.replace(".", "").replace(",", "")
+            for p in ("%b %Y", "%B %Y"):
+                try:
+                    dt = datetime.strptime(cleaned, p)
+                    return dt.date()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return None
 
-    if "personal_info" not in master_resume:
+    today = date.today()
+
+    # --- Шаг 0: подготовка удобных ссылок (и гарантия поля personal_info) ---
+    if "personal_info" not in master_resume or not isinstance(master_resume.get("personal_info"), dict):
         master_resume["personal_info"] = {}
 
-    master_resume["personal_info"]["linkedin"] = l_linkedin
-    master_resume["personal_info"]["portfolio"] = l_portfolio
+    pi = master_resume["personal_info"]
+    pi["linkedin"] = add_https_if_missing(pi.get("linkedin", "") or "")
+    pi["portfolio"] = add_https_if_missing(pi.get("portfolio", "") or "")
 
-    # --- Шаг 1: восстановление unconfirmed ---
-    for skill in hard_skills:
-        if not skill.get("confirmed_by"):
-            unconfirmed_skills.add(skill["term"])
+    # --- Шаг 1: гарантия наличия секций и удобных ссылок на списки ---
+    if "skills" not in master_resume or not isinstance(master_resume.get("skills"), dict):
+        master_resume["skills"] = {"hard_skills": [], "soft_skills": []}
+    skills = master_resume["skills"]
+    hard_skills: List[Dict[str, Any]] = skills.get("hard_skills") or []
+    soft_skills: List[Dict[str, Any]] = skills.get("soft_skills") or []
 
-    for skill in soft_skills:
-        if not skill.get("confirmed_by"):
-            unconfirmed_skills.add(skill["term"])
+    keywords: List[Dict[str, Any]] = master_resume.get("keywords") or []
+    experience: List[Dict[str, Any]] = master_resume.get("experience") or []
 
+    # ensure unconfirmed and explicitly_not_used exist (пустые списки при отсутствии)
+    if "unconfirmed" not in master_resume or not isinstance(master_resume.get("unconfirmed"), dict):
+        master_resume["unconfirmed"] = {"skills": [], "keywords": []}
+    else:
+        master_resume["unconfirmed"].setdefault("skills", [])
+        master_resume["unconfirmed"].setdefault("keywords", [])
+
+    if "explicitly_not_used" not in master_resume or not isinstance(master_resume.get("explicitly_not_used"), dict):
+        master_resume["explicitly_not_used"] = {"skills": [], "keywords": []}
+    else:
+        master_resume["explicitly_not_used"].setdefault("skills", [])
+        master_resume["explicitly_not_used"].setdefault("keywords", [])
+
+    # --- Шаг 2: удаление дубликатов буллетов и сквозная нумерация ID ---
+    # Удаляем полностью повторяющиеся буллеты по полю text (сохраняем первую встречу).
+    seen_texts = set()
+    next_bullet_id = 1
+    for exp in experience:
+        new_bullets = []
+        for bullet in exp.get("bullets", []) or []:
+            text = (bullet.get("text") or "").strip()
+            if text == "":
+                # если текст пустой — считаем его допустимым, но всё ещё фильтруем по точному совпадению
+                pass
+            if text in seen_texts:
+                # дубликат — пропускаем
+                continue
+            seen_texts.add(text)
+            # make a shallow copy to avoid mutating original references unexpectedly
+            b = dict(bullet)
+            # перезаписываем id сквозной нумерацией
+            b["id"] = next_bullet_id
+            next_bullet_id += 1
+            # гарантируем поля lists
+            b.setdefault("skills_used", [])
+            b.setdefault("keyword_used", [])
+            new_bullets.append(b)
+        exp["bullets"] = new_bullets
+
+    # --- Шаг 3: гарантируем, что confirmed_by у всех скиллов/кейвордс пустые списки ---
+    def ensure_confirmed_by_empty(lst: List[Dict[str, Any]]):
+        for item in lst:
+            item["confirmed_by"] = []
+
+    ensure_confirmed_by_empty(hard_skills)
+    ensure_confirmed_by_empty(soft_skills)
     for kw in keywords:
-        if not kw.get("confirmed_by"):
-            unconfirmed_keywords.add(kw["term"])
+        kw["confirmed_by"] = []
+
+    # --- Шаг 4: удалить дубликаты терминов между hard / soft / keywords ---
+    # Правило: если термин в hard — удаляем все вхождения в soft; если термин в (hard или soft) — удаляем из keywords.
+    # Сравнение терминов делаем по точной строке (case sensitive?). Сделаем нормализацию: strip().
+    def normalize_term(t):
+        return t.strip() if isinstance(t, str) else t
+
+    hard_terms = []
+    for s in hard_skills:
+        term = normalize_term(s.get("term", ""))
+        s["term"] = term
+        hard_terms.append(term)
+    hard_set = set(filter(None, hard_terms))
+
+    # Filter soft: remove any whose term is in hard_set
+    new_soft = []
+    for s in soft_skills:
+        term = normalize_term(s.get("term", ""))
+        s["term"] = term
+        if term and term in hard_set:
+            # удаляем дубликат из soft
+            continue
+        new_soft.append(s)
+    soft_skills[:] = new_soft  # in-place replace
+
+    soft_terms = [s.get("term", "") for s in soft_skills]
+    soft_set = set(filter(None, [t.strip() for t in soft_terms]))
+
+    # Filter keywords: remove any that appear in hard_set or soft_set
+    new_keywords = []
+    for k in keywords:
+        term = normalize_term(k.get("term", ""))
+        k["term"] = term
+        if term and (term in hard_set or term in soft_set):
+            continue
+        new_keywords.append(k)
+    keywords[:] = new_keywords  # in-place replace
+
+    # --- Шаг 5: обработка терминов из буллетов ---
+    # - неизвестные skills_used → в unknown.skills
+    # - неизвестные keyword_used → добавлять в keywords как полноценные записи
+    # - unknown.keywords больше НЕ используется
+
+    # Наборы известных терминов
+    known_skill_terms = set(
+        normalize_term(s.get("term", ""))
+        for s in (hard_skills + soft_skills)
+        if normalize_term(s.get("term", ""))
+    )
+    known_keyword_terms = set(
+        normalize_term(k.get("term", ""))
+        for k in keywords
+        if normalize_term(k.get("term", ""))
+    )
+
+    unknown_skills = set()
+
+    for exp in experience:
+        for bullet in exp.get("bullets", []) or []:
+            
+            # --- skills_used ---
+            for term in bullet.get("skills_used", []) or []:
+                t = normalize_term(term)
+                if not t:
+                    continue
+                # если термин не найден ни в skill-секциях, ни в keywords → unknown.skills
+                if t not in known_skill_terms and t not in known_keyword_terms:
+                    unknown_skills.add(t)
+
+            # --- keyword_used ---
+            for term in bullet.get("keyword_used", []) or []:
+                t = normalize_term(term)
+                if not t:
+                    continue
+                # если термина нет в keywords → добавляем заготовку
+                if t not in known_keyword_terms:
+                    keywords.append({
+                        "term": t,
+                        "confirmed_by": [],
+                        "origin": True
+                    })
+                    known_keyword_terms.add(t)  # чтобы не добавлять повторно
+
+    # Создание секции unknown только для skills
+    if unknown_skills:
+        master_resume.setdefault("unknown", {})
+        master_resume["unknown"]["skills"] = sorted(unknown_skills)
+        # unknown[keywords] больше не используется
+    else:
+        # гарантируем корректную структуру, если она вдруг уже существовала
+        if "unknown" in master_resume:
+            master_resume["unknown"].setdefault("skills", [])
+
+    # --- Шаг 6: вычисление duration_years для каждой компании на основании start_date/end_date ---
+    for exp in experience:
+        start_raw = exp.get("start_date", "") or ""
+        end_raw = exp.get("end_date", "") or ""
+
+        start_parsed = None
+        end_parsed = None
+
+        # handle present/now
+        if isinstance(end_raw, str) and end_raw.strip().lower() in ("present", "now"):
+            end_parsed = today
+        else:
+            end_parsed = try_parse_date(end_raw)
+
+        if isinstance(start_raw, str) and start_raw.strip().lower() in ("present", "now"):
+            # start == present — treat as today
+            start_parsed = today
+        else:
+            start_parsed = try_parse_date(start_raw)
+
+        duration_years = None
+        if (start_parsed is None or start_parsed == "") and (end_parsed is None or end_parsed == ""):
+            # если обе даты пустые или нераспарсились — ставим 1
+            duration_years = 1.0
+        else:
+            # если одна из дат отсутствует — подставляем today для вычисления (если end отсутствует) или
+            # используем start_parsed и end_parsed если есть хотя бы одна
+            if start_parsed is None and end_parsed is not None:
+                # не знаем начало — предположим год до end (1 год)
+                # альтернативно можно взять 1.0 как минимальный
+                duration_years = 1.0
+            elif start_parsed is not None and end_parsed is None:
+                # нет конца — считаем до сегодня
+                delta_days = (today - start_parsed).days
+                if delta_days < 0:
+                    # на случай ошибок в датах
+                    duration_years = 1.0
+                else:
+                    duration_years = round(delta_days / 365.0, 1)
+                    if duration_years < 0.1:
+                        duration_years = 0.1
+            else:
+                # оба присутствуют
+                try:
+                    delta_days = (end_parsed - start_parsed).days
+                    if delta_days < 0:
+                        # некорректный период — минимизируем до 0.1 или 1
+                        duration_years = 1.0
+                    else:
+                        duration_years = round(delta_days / 365.0, 1)
+                        if duration_years < 0.1:
+                            duration_years = 0.1
+                except Exception:
+                    duration_years = 1.0
+
+        exp["duration_years"] = duration_years
+
+    # --- Шаг 7: восстановление секции unconfirmed на основе пустого confirmed_by ---
+    unconfirmed_skills = set(master_resume.get("unconfirmed", {}).get("skills", []))
+    unconfirmed_keywords = set(master_resume.get("unconfirmed", {}).get("keywords", []))
+
+    for s in hard_skills:
+        if not s.get("confirmed_by"):
+            term = normalize_term(s.get("term", ""))
+            if term:
+                unconfirmed_skills.add(term)
+
+    for s in soft_skills:
+        if not s.get("confirmed_by"):
+            term = normalize_term(s.get("term", ""))
+            if term:
+                unconfirmed_skills.add(term)
+
+    for k in keywords:
+        if not k.get("confirmed_by"):
+            term = normalize_term(k.get("term", ""))
+            if term:
+                unconfirmed_keywords.add(term)
 
     master_resume["unconfirmed"] = {
         "skills": sorted(unconfirmed_skills),
         "keywords": sorted(unconfirmed_keywords)
     }
 
-    # --- Шаг 2: синхронизация confirmed_by с буллетами ---
-    bullet_index = {}
-    for exp in experience:
-        for bullet in exp.get("bullets", []):
-            bullet_index[bullet["id"]] = bullet
+    # --- Финальные гарантии: убедимся, что все перечисляемые секции присутствуют в нужном виде ---
+    master_resume.setdefault("desired_positions", master_resume.get("desired_positions", []))
+    master_resume.setdefault("education", master_resume.get("education", []))
+    master_resume.setdefault("certifications", master_resume.get("certifications", []))
+    master_resume.setdefault("languages", master_resume.get("languages", []))
 
-    def ensure_in_list(lst: list, term: str):
-        if term not in lst:
-            lst.append(term)
-
-    for skill in hard_skills:
-        term = skill["term"]
-        confirmed_ids = skill.get("confirmed_by", [])
-        valid_ids = []
-        for bullet_id in confirmed_ids:
-            bullet = bullet_index.get(bullet_id)
-            if bullet is not None:
-                ensure_in_list(bullet.setdefault("skills_used", []), term)
-                valid_ids.append(bullet_id)
-            # else: пропускаем — тем самым выбрасываем битый ID
-        skill["confirmed_by"] = valid_ids
-
-    for skill in soft_skills:
-        term = skill["term"]
-        confirmed_ids = skill.get("confirmed_by", [])
-        valid_ids = []
-        for bullet_id in confirmed_ids:
-            bullet = bullet_index.get(bullet_id)
-            if bullet is not None:
-                ensure_in_list(bullet.setdefault("skills_used", []), term)
-                valid_ids.append(bullet_id)
-        skill["confirmed_by"] = valid_ids
-
-    for kw in keywords:
-        term = kw["term"]
-        confirmed_ids = kw.get("confirmed_by", [])
-        valid_ids = []
-        for bullet_id in confirmed_ids:
-            bullet = bullet_index.get(bullet_id)
-            if bullet is not None:
-                ensure_in_list(bullet.setdefault("keyword_used", []), term)
-                valid_ids.append(bullet_id)
-        kw["confirmed_by"] = valid_ids
-
-    # --- Шаг 3: обратная проверка — добавляем missing confirmed_by ---
-    # Создаём быстрый поиск термина в соответствующих секциях
-    hard_skill_map = {s["term"]: s for s in hard_skills}
-    soft_skill_map = {s["term"]: s for s in soft_skills}
-    keyword_map = {k["term"]: k for k in keywords}
-
-    for bullet_id, bullet in bullet_index.items():
-        for term in bullet.get("skills_used", []):
-            # hard skills
-            if term in hard_skill_map:
-                ensure_in_list(hard_skill_map[term].setdefault("confirmed_by", []), bullet_id)
-            # soft skills
-            elif term in soft_skill_map:
-                ensure_in_list(soft_skill_map[term].setdefault("confirmed_by", []), bullet_id)
-
-        for term in bullet.get("keyword_used", []):
-            if term in keyword_map:
-                ensure_in_list(keyword_map[term].setdefault("confirmed_by", []), bullet_id)
+    # Обновим ссылки на списки в документе (на случай, если мы меняли сами списки)
+    master_resume["skills"]["hard_skills"] = hard_skills
+    master_resume["skills"]["soft_skills"] = soft_skills
+    master_resume["keywords"] = keywords
+    master_resume["experience"] = experience
 
     return master_resume
 
@@ -1650,3 +1858,51 @@ def analyze_job_description(job_description: str, extract: Dict[str, Any]) -> Di
     }
 
     return result
+
+def skills2master(skills: dict, master_resume: dict) -> dict:
+    """
+    Merge classified skills (hard/soft) into master_resume.skills,
+    following the master skill structure:
+    [{"term": "", "confirmed_by": [], "origin": true}]
+    Also removes added skills from master_resume.unknown.skills.
+    """
+
+    # Ensure required structures exist
+    master_resume.setdefault("skills", {"hard_skills": [], "soft_skills": []})
+    master_resume["skills"].setdefault("hard_skills", [])
+    master_resume["skills"].setdefault("soft_skills", [])
+
+    master_resume.setdefault("unknown", {})
+    master_resume["unknown"].setdefault("skills", [])
+
+    # Helper: create master skill object
+    def make_skill_obj(term: str) -> dict:
+        return {
+            "term": term,
+            "confirmed_by": [],
+            "origin": True
+        }
+
+    # Add hard skills
+    for term in skills.get("hard_skills", []):
+        # avoid duplicates
+        if not any(s["term"].lower() == term.lower() for s in master_resume["skills"]["hard_skills"]):
+            master_resume["skills"]["hard_skills"].append(make_skill_obj(term))
+
+        # remove from unknown.skills
+        master_resume["unknown"]["skills"] = [
+            s for s in master_resume["unknown"]["skills"]
+            if s.lower() != term.lower()
+        ]
+
+    # Add soft skills
+    for term in skills.get("soft_skills", []):
+        if not any(s["term"].lower() == term.lower() for s in master_resume["skills"]["soft_skills"]):
+            master_resume["skills"]["soft_skills"].append(make_skill_obj(term))
+
+        master_resume["unknown"]["skills"] = [
+            s for s in master_resume["unknown"]["skills"]
+            if s.lower() != term.lower()
+        ]
+
+    return master_resume

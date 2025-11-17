@@ -22,7 +22,8 @@ from resume_utils import (
     push_bullets,
     simplify_extract,
     compute_ats_metrics,
-    analyze_job_description
+    analyze_job_description,
+    skills2master
 )
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -241,4 +242,27 @@ async def analyze_job_endpoint(request: Request):
         return JSONResponse(content={"error": "job_description and extract are required"}, status_code=400)
 
     result = analyze_job_description(job_description, extract)
+    return JSONResponse(content=result)
+
+
+@app.post("/skills2master")
+async def skills2master_endpoint(request: Request):
+    """
+    Эндпоинт для анализа вакансии.
+    Принимает JSON:
+    {
+      "skills": {
+            "hard_skills":["", ""], 
+            "soft_skills":["", ""]
+        },
+      "master_resume": {...}
+    }
+    """
+    data = await request.json()
+
+    skills = data.get("skills")
+    master_resume = data.get("master_resume")
+
+    result = skills2master(skills, master_resume)
+
     return JSONResponse(content=result)
