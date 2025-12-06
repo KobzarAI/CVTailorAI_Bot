@@ -23,7 +23,8 @@ from resume_utils import (
     simplify_extract,
     compute_ats_metrics,
     analyze_job_description,
-    skills2master
+    skills2master,
+    BulletsToButtons
 )
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -265,4 +266,11 @@ async def skills2master_endpoint(request: Request):
 
     result = skills2master(skills, master_resume)
 
+    return JSONResponse(content=result)
+
+
+@app.post("/bullets2buttons")
+async def bullets2buttons(request: Request):
+    data = await request.json()
+    result = BulletsToButtons(data)
     return JSONResponse(content=result)

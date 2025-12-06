@@ -1906,3 +1906,25 @@ def skills2master(skills: dict, master_resume: dict) -> dict:
         ]
 
     return master_resume
+
+
+def BulletsToButtons(data: dict) -> dict:
+    bullets = data.get("bullets", [])
+    inline_keyboard = []
+
+    for item in bullets:
+        text = item.get("text", "")
+        callback = str(item.get("id", ""))
+
+        # Перенос строки после 34 символов
+        if len(text) > 34:
+            text = text[:34] + "\n" + text[34:]
+
+        inline_keyboard.append([
+            {
+                "text": text,
+                "callback_data": callback
+            }
+        ])
+
+    return {"inline_keyboard": inline_keyboard}
