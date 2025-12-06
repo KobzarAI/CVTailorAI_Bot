@@ -1913,14 +1913,8 @@ def BulletsToButtons(data: dict) -> dict:
     inline_keyboard = []
 
     for item in bullets:
-        full_text = item.get("text", "")
+        text = item.get("text", "")
         callback = str(item.get("id", ""))
-
-        # Берём последние 34 символа
-        if len(full_text) > 34:
-            text = full_text[-34:]
-        else:
-            text = full_text
 
         inline_keyboard.append([
             {
