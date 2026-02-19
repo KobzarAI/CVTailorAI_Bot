@@ -973,10 +973,13 @@ def unconfirmed2terms(input_data):
         })
     return {"terms": terms}
 
-def buttons(data: dict) -> dict:
+def btnsCompany(data: dict) -> dict:
     companies = data.get("companies", [])
     
     inline_keyboard = [[{"text": c, "callback_data": c}] for c in companies]
+
+    # добавляем кнопку NO последней
+    inline_keyboard.append([{"text": "NO", "callback_data": "no"}])
     
     return {
         "inline_keyboard": inline_keyboard

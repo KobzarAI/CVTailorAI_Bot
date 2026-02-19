@@ -12,7 +12,7 @@ from resume_utils import (
     gather_origin_terms,
     gather_all_current_terms,
     unconfirmed2terms,
-    buttons,
+    btnsCompany,
     select_to_confirm_list,
     auto_confirm_terms,
     remove_unconfirmed_and_unused_terms,
@@ -110,10 +110,10 @@ async def unconfirmed_to_terms_endpoint(request: Request):
     return JSONResponse(content=result)
 
 
-@app.post("/buttons")
-async def buttons_endpoint(request: Request):
+@app.post("/btnsCompany")
+async def btnsCompany_endpoint(request: Request):
     data = await request.json()
-    result = buttons(data)
+    result = btnsCompany(data)
     return JSONResponse(content=result)
 
 
