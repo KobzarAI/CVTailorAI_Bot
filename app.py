@@ -24,7 +24,8 @@ from resume_utils import (
     compute_ats_metrics,
     analyze_job_description,
     skills2master,
-    BulletsToButtons
+    BulletsToButtons,
+    Term_not_used
 )
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -274,3 +275,29 @@ async def bullets2buttons(request: Request):
     data = await request.json()
     result = BulletsToButtons(data)
     return JSONResponse(content=result)
+
+
+@app.post("/term_not_used")
+async def term_not_used_endpoint(request: Request):
+    """
+    Expects JSON:
+    {
+        "term_name": "Leadership",
+        "term_type": "hard | soft | keyword",
+        "master_resume": { ... full Master_JSON ... }
+    }
+    """
+
+    data = await request.json()
+
+    term_name = data.get("term_name")
+    term_type = data.get("term_type")
+    master_resume = data.get("master_resume", {})
+
+    updated_master = term_not_used(
+        term_name=term_name,
+        term_type=term_type,
+        master_json=master_resume
+    )
+
+    return JSONResponse(content=updated_master)

@@ -1927,3 +1927,57 @@ def BulletsToButtons(data: dict) -> dict:
         ])
 
     return {"inline_keyboard": inline_keyboard}
+
+
+def Term_not_used(term_name: str, term_type: str, master_json: dict) -> dict:
+    term_lower = term_name.lower()
+
+    def remove_term(items):
+        return [i for i in items if i.get("term", "").lower() != term_lower]
+
+    # гарантируем наличие нужных секций
+    master_json.setdefault("unconfirmed", {"skills": [], "keywords": []})
+    master_json.setdefault("explicitly_not_used", {"skills": [], "keywords": []})
+
+    if term_type in ("hard", "soft"):
+        skill_section = "hard_skills" if term_type == "hard" else "soft_skills"
+
+        # удалить из skills
+        if "skills" in master_json and skill_section in master_json["skills"]:
+            master_json["skills"][skill_section] = remove_term(
+                master_json["skills"][skill_section]
+            )
+
+        # удалить из unconfirmed.skills
+        master_json["unconfirmed"]["skills"] = remove_term(
+            master_json["unconfirmed"]["skills"]
+        )
+
+        # добавить в explicitly_not_used.skills если нет
+        if not any(
+            x.get("term", "").lower() == term_lower
+            for x in master_json["explicitly_not_used"]["skills"]
+        ):
+            master_json["explicitly_not_used"]["skills"].append({"term": term_name})
+
+    elif term_type == "keyword":
+
+        # удалить из keywords
+        master_json["keywords"] = remove_term(master_json.get("keywords", []))
+
+        # удалить из unconfirmed.keywords
+        master_json["unconfirmed"]["keywords"] = remove_term(
+            master_json["unconfirmed"]["keywords"]
+        )
+
+        # добавить в explicitly_not_used.keywords если нет
+        if not any(
+            x.get("term", "").lower() == term_lower
+            for x in master_json["explicitly_not_used"]["keywords"]
+        ):
+            master_json["explicitly_not_used"]["keywords"].append({"term": term_name})
+
+    else:
+        raise ValueError("term_type must be 'hard', 'soft', or 'keyword'")
+
+    return master_json
