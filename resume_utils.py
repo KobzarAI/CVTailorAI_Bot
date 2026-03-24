@@ -1981,3 +1981,80 @@ def Term_not_used(term_name: str, term_type: str, master_json: dict) -> dict:
         raise ValueError("term_type must be 'hard', 'soft', or 'keyword'")
 
     return master_json
+
+def GetCompanyBullets(master_json: dict, company_name: str):
+    """
+    Возвращает:
+    - bullets_text (str)
+    - bullets_menu (dict)
+    """
+
+    experience = master_json.get("experience", [])
+
+    # нормализация входного названия
+    target_company = (company_name or "").strip().lower()
+
+    # Найти нужную компанию (регистронезависимо)
+    company_data = None
+    for job in experience:
+        job_company = (job.get("company") or "").strip().lower()
+        if job_company == target_company:
+            company_data = job
+            break
+
+    if not company_data:
+        return {
+            "bullets_text": "",
+            "bullets_menu": {"inline_keyboard": [[{"text": "Back", "callback_data": "Back"}]]}
+        }
+
+    bullets = company_data.get("bullets", [])
+
+    # --- bullets_text ---
+    lines = []
+    l_ids = []
+
+    for bullet in bullets:
+        b_id = bullet.get("id")
+        text = bullet.get("text", "")
+
+        if b_id is None:
+            continue
+
+        lines.append(f"{b_id}. {text}")
+        l_ids.append(b_id)
+
+    bullets_text = "\n".join(lines)
+
+    # --- bullets_menu ---
+    inline_keyboard = []
+    row = []
+
+    for idx, b_id in enumerate(l_ids):
+        row.append({
+            "text": str(b_id),
+            "callback_data": str(b_id)
+        })
+
+        if (idx + 1) % 3 == 0:
+            inline_keyboard.append(row)
+            row = []
+
+    if row:
+        inline_keyboard.append(row)
+
+    inline_keyboard.append([
+        {
+            "text": "Back",
+            "callback_data": "Back"
+        }
+    ])
+
+    bullets_menu = {
+        "inline_keyboard": inline_keyboard
+    }
+
+    return {
+        "bullets_text": bullets_text,
+        "bullets_menu": bullets_menu
+    }

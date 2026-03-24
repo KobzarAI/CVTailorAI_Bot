@@ -25,7 +25,8 @@ from resume_utils import (
     analyze_job_description,
     skills2master,
     BulletsToButtons,
-    Term_not_used
+    Term_not_used,
+    GetCompanyBullets
 )
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -301,3 +302,26 @@ async def term_not_used_endpoint(request: Request):
     )
 
     return JSONResponse(content=updated_master)
+
+
+@app.post("/get_company_bullets")
+async def get_company_bullets_endpoint(request: Request):
+    """
+    Expects JSON:
+    {
+        "company_name": "Company 1",
+        "master_resume": { ... full Master_JSON ... }
+    }
+    """
+
+    data = await request.json()
+
+    company_name = data.get("company_name")
+    master_resume = data.get("master_resume", {})
+
+    result = GetCompanyBullets(
+        master_json=master_resume,
+        company_name=company_name
+    )
+
+    return JSONResponse(content=result)
