@@ -26,7 +26,8 @@ from resume_utils import (
     skills2master,
     BulletsToButtons,
     Term_not_used,
-    GetCompanyBullets
+    GetCompanyBullets,
+    confirm_term
 )
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -325,3 +326,35 @@ async def get_company_bullets_endpoint(request: Request):
     )
 
     return JSONResponse(content=result)
+
+
+@app.post("/confirm_term")
+async def confirm_term_endpoint(request: Request):
+    """
+    Expects JSON:
+    {
+        "bullet_id": 11,
+        "term_name": "Leadership",
+        "term_type": "hard | soft | keyword",
+        "master_resume": { ... full Master_JSON ... }
+    }
+    """
+
+    data = await request.json()
+
+    bullet_id = data.get("bullet_id")
+    term_name = data.get("term_name")
+    term_type = data.get("term_type")
+    master_resume = data.get("master_resume", {})
+
+    try:
+        updated_master = confirm_term(
+            master_json=master_resume,
+            bullet_id=bullet_id,
+            term_name=term_name,
+            term_type=term_type
+        )
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+    return JSONResponse(content=updated_master)
