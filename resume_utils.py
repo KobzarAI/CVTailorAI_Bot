@@ -979,7 +979,7 @@ def btnsCompany(data: dict) -> dict:
     inline_keyboard = [[{"text": c, "callback_data": c}] for c in companies]
 
     # добавляем кнопку NO последней
-    inline_keyboard.append([{"text": "NO", "callback_data": "no"}])
+    inline_keyboard.append([{"text": "No experience", "callback_data": "no_experience"}])
     
     return {
         "inline_keyboard": inline_keyboard
