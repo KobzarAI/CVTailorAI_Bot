@@ -949,7 +949,8 @@ def filter_and_rank_bullets(master_resume, extract):
 def unconfirmed2terms(input_data):
     terms = []
 
-    skills = input_data.get("skills", {})
+    master_resume = input_data.get("master_resume", {})
+    skills = master_resume.get("skills", {})
 
     for skill in skills.get("hard_skills", []):
         if skill.get("confirmed_by") == []:
@@ -967,7 +968,7 @@ def unconfirmed2terms(input_data):
                 "generated_bullet": "",
             })
 
-    for keyword in input_data.get("keywords", []):
+    for keyword in master_resume.get("keywords", []):
         if keyword.get("confirmed_by") == []:
             terms.append({
                 "term": keyword.get("term", ""),
