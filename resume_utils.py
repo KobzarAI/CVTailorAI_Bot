@@ -947,30 +947,34 @@ def filter_and_rank_bullets(master_resume, extract):
 
 
 def unconfirmed2terms(input_data):
-    unconfirmed = input_data.get("unconfirmed", {})
-
     terms = []
-    skills = unconfirmed.get("skills", [])
-    keywords = unconfirmed.get("keywords", [])
 
-    for skill in skills:
-        terms.append({
-            "term": skill,
-            "type": "skill",
-            "used": True,
-            "answer_raw": "",
-            "generated_bullet": "",
-            "company": ""
-        })
-    for keyword in keywords:
-        terms.append({
-            "term": keyword,
-            "type": "keyword",
-            "used": True,
-            "answer_raw": "",
-            "generated_bullet": "",
-            "company": ""
-        })
+    skills = input_data.get("skills", {})
+
+    for skill in skills.get("hard_skills", []):
+        if skill.get("confirmed_by") == []:
+            terms.append({
+                "term": skill.get("term", ""),
+                "type": "hard",
+                "generated_bullet": "",
+            })
+
+    for skill in skills.get("soft_skills", []):
+        if skill.get("confirmed_by") == []:
+            terms.append({
+                "term": skill.get("term", ""),
+                "type": "soft",
+                "generated_bullet": "",
+            })
+
+    for keyword in input_data.get("keywords", []):
+        if keyword.get("confirmed_by") == []:
+            terms.append({
+                "term": keyword.get("term", ""),
+                "type": "keyword",
+                "generated_bullet": "",
+            })
+
     return {"terms": terms}
 
 def btnsCompany(data: dict) -> dict:
