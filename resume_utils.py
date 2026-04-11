@@ -2070,8 +2070,13 @@ def confirm_term(master_json: dict, bullet_id: int, term_name: str, term_type: s
     Confirms a skill or keyword with a specific bullet, establishing a two-way link.
     term_type: "hard" | "soft" | "keyword"
     """
-    import copy
+    
     master = copy.deepcopy(master_json)
+
+    # --- 0. Normalize inputs ---
+    term_name = term_name.strip()
+    if term_name and term_name[0].islower():
+        term_name = term_name[0].upper() + term_name[1:]
 
     # --- 1. Find the bullet in experience ---
     target_bullet = None
@@ -2082,16 +2087,17 @@ def confirm_term(master_json: dict, bullet_id: int, term_name: str, term_type: s
                 break
         if target_bullet:
             break
-
     if target_bullet is None:
         raise ValueError(f"Bullet with id={bullet_id} not found in experience.")
 
     # --- 2. Add term to bullet's skills_used or keyword_used ---
     if term_type in ("hard", "soft"):
-        if term_name not in target_bullet.setdefault("skills_used", []):
+        existing = [t.strip().lower() for t in target_bullet.setdefault("skills_used", [])]
+        if term_name.lower() not in existing:
             target_bullet["skills_used"].append(term_name)
     elif term_type == "keyword":
-        if term_name not in target_bullet.setdefault("keyword_used", []):
+        existing = [t.strip().lower() for t in target_bullet.setdefault("keyword_used", [])]
+        if term_name.lower() not in existing:
             target_bullet["keyword_used"].append(term_name)
     else:
         raise ValueError(f"Invalid term_type='{term_type}'. Must be 'hard', 'soft', or 'keyword'.")
@@ -2104,31 +2110,41 @@ def confirm_term(master_json: dict, bullet_id: int, term_name: str, term_type: s
     else:
         term_list = master["keywords"]
 
-    term_entry = next((t for t in term_list if t.get("term") == term_name), None)
-
+    term_entry = next(
+        (t for t in term_list if t.get("term", "").strip().lower() == term_name.lower()),
+        None
+    )
     if term_entry is None:
-        # Create new entry without "origin": true
         term_entry = {"term": term_name, "confirmed_by": []}
         term_list.append(term_entry)
-
     if bullet_id not in term_entry.setdefault("confirmed_by", []):
         term_entry["confirmed_by"].append(bullet_id)
 
     # --- 4. Remove from unconfirmed if present ---
     unconfirmed = master.setdefault("unconfirmed", {"skills": [], "keywords": []})
-
     if term_type in ("hard", "soft"):
-        unconfirmed["skills"] = [t for t in unconfirmed.get("skills", []) if t != term_name]
+        unconfirmed["skills"] = [
+            t for t in unconfirmed.get("skills", [])
+            if t.strip().lower() != term_name.lower()
+        ]
     else:
-        unconfirmed["keywords"] = [t for t in unconfirmed.get("keywords", []) if t != term_name]
+        unconfirmed["keywords"] = [
+            t for t in unconfirmed.get("keywords", [])
+            if t.strip().lower() != term_name.lower()
+        ]
 
     # --- 5. Remove from explicitly_not_used if present ---
     not_used = master.setdefault("explicitly_not_used", {"skills": [], "keywords": []})
-
     if term_type in ("hard", "soft"):
-        not_used["skills"] = [t for t in not_used.get("skills", []) if t != term_name]
+        not_used["skills"] = [
+            t for t in not_used.get("skills", [])
+            if t.strip().lower() != term_name.lower()
+        ]
     else:
-        not_used["keywords"] = [t for t in not_used.get("keywords", []) if t != term_name]
+        not_used["keywords"] = [
+            t for t in not_used.get("keywords", [])
+            if t.strip().lower() != term_name.lower()
+        ]
 
     return master
 
@@ -2138,18 +2154,23 @@ def add_new_bullet(master_json: dict, company: str, bullet: str, term_name: str,
     Adds a new bullet to a company's experience entry and confirms the linked term.
     term_type: "hard" | "soft" | "keyword"
     """
-    import copy
     master = copy.deepcopy(master_json)
+
+    # --- 0. Normalize inputs ---
+    company = company.strip()
+    bullet = bullet.strip()
+    term_name = term_name.strip()
+    # Capitalize only first letter if term starts lowercase (preserves abbreviations like "GDPR")
+    if term_name and term_name[0].islower():
+        term_name = term_name[0].upper() + term_name[1:]
 
     # --- 1. Find the company in experience ---
     target_job = next(
-        (job for job in master.get("experience", []) if job.get("company") == company),
+        (job for job in master.get("experience", []) if job.get("company", "").strip().lower() == company.lower()),
         None
     )
-
     if target_job is None:
         raise ValueError(f"Company '{company}' not found in experience.")
-
     if term_type not in ("hard", "soft", "keyword"):
         raise ValueError(f"Invalid term_type='{term_type}'. Must be 'hard', 'soft', or 'keyword'.")
 
@@ -2177,7 +2198,6 @@ def add_new_bullet(master_json: dict, company: str, bullet: str, term_name: str,
             "skills_used": [],
             "keyword_used": [term_name]
         }
-
     target_job.setdefault("bullets", []).append(new_bullet)
 
     # --- 4. Find or create term entry; add new_id to confirmed_by ---
@@ -2188,8 +2208,10 @@ def add_new_bullet(master_json: dict, company: str, bullet: str, term_name: str,
     else:
         term_list = master["keywords"]
 
-    term_entry = next((t for t in term_list if t.get("term") == term_name), None)
-
+    term_entry = next(
+        (t for t in term_list if t.get("term", "").strip().lower() == term_name.lower()),
+        None
+    )
     if term_entry is None:
         term_entry = {"term": term_name, "confirmed_by": [new_id]}
         term_list.append(term_entry)
@@ -2199,18 +2221,28 @@ def add_new_bullet(master_json: dict, company: str, bullet: str, term_name: str,
 
     # --- 5. Remove from unconfirmed if present ---
     unconfirmed = master.setdefault("unconfirmed", {"skills": [], "keywords": []})
-
     if term_type in ("hard", "soft"):
-        unconfirmed["skills"] = [t for t in unconfirmed.get("skills", []) if t != term_name]
+        unconfirmed["skills"] = [
+            t for t in unconfirmed.get("skills", [])
+            if t.strip().lower() != term_name.lower()
+        ]
     else:
-        unconfirmed["keywords"] = [t for t in unconfirmed.get("keywords", []) if t != term_name]
+        unconfirmed["keywords"] = [
+            t for t in unconfirmed.get("keywords", [])
+            if t.strip().lower() != term_name.lower()
+        ]
 
     # --- 6. Remove from explicitly_not_used if present ---
     not_used = master.setdefault("explicitly_not_used", {"skills": [], "keywords": []})
-
     if term_type in ("hard", "soft"):
-        not_used["skills"] = [t for t in not_used.get("skills", []) if t != term_name]
+        not_used["skills"] = [
+            t for t in not_used.get("skills", [])
+            if t.strip().lower() != term_name.lower()
+        ]
     else:
-        not_used["keywords"] = [t for t in not_used.get("keywords", []) if t != term_name]
+        not_used["keywords"] = [
+            t for t in not_used.get("keywords", [])
+            if t.strip().lower() != term_name.lower()
+        ]
 
     return master
