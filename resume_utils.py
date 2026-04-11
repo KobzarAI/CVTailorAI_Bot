@@ -2201,28 +2201,16 @@ def add_new_bullet(master_json: dict, company: str, bullet: str, term_name: str,
     unconfirmed = master.setdefault("unconfirmed", {"skills": [], "keywords": []})
 
     if term_type in ("hard", "soft"):
-        unconfirmed["skills"] = [
-            t for t in unconfirmed.get("skills", [])
-            if t.get("term") != term_name
-        ]
+        unconfirmed["skills"] = [t for t in unconfirmed.get("skills", []) if t != term_name]
     else:
-        unconfirmed["keywords"] = [
-            t for t in unconfirmed.get("keywords", [])
-            if t.get("term") != term_name
-        ]
+        unconfirmed["keywords"] = [t for t in unconfirmed.get("keywords", []) if t != term_name]
 
     # --- 6. Remove from explicitly_not_used if present ---
     not_used = master.setdefault("explicitly_not_used", {"skills": [], "keywords": []})
 
     if term_type in ("hard", "soft"):
-        not_used["skills"] = [
-            t for t in not_used.get("skills", [])
-            if t.get("term") != term_name
-        ]
+        not_used["skills"] = [t for t in not_used.get("skills", []) if t != term_name]
     else:
-        not_used["keywords"] = [
-            t for t in not_used.get("keywords", [])
-            if t.get("term") != term_name
-        ]
+        not_used["keywords"] = [t for t in not_used.get("keywords", []) if t != term_name]
 
     return master
