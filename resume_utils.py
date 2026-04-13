@@ -1937,8 +1937,14 @@ def BulletsToButtons(data: dict) -> dict:
 def Term_not_used(term_name: str, term_type: str, master_json: dict) -> dict:
     term_lower = term_name.lower()
 
-    def remove_term(items):
+    def remove_from_dict_list(items):
         return [i for i in items if i.get("term", "").lower() != term_lower]
+
+    def remove_from_str_list(items):
+        return [i for i in items if isinstance(i, str) and i.lower() != term_lower]
+
+    def exists_in_str_list(items):
+        return any(isinstance(i, str) and i.lower() == term_lower for i in items)
 
     # гарантируем наличие нужных секций
     master_json.setdefault("unconfirmed", {"skills": [], "keywords": []})
@@ -1947,43 +1953,53 @@ def Term_not_used(term_name: str, term_type: str, master_json: dict) -> dict:
     if term_type in ("hard", "soft"):
         skill_section = "hard_skills" if term_type == "hard" else "soft_skills"
 
-        # удалить из skills
+        # удалить из skills (dict)
         if "skills" in master_json and skill_section in master_json["skills"]:
-            master_json["skills"][skill_section] = remove_term(
+            master_json["skills"][skill_section] = remove_from_dict_list(
                 master_json["skills"][skill_section]
             )
 
-        # удалить из unconfirmed.skills
-        master_json["unconfirmed"]["skills"] = remove_term(
-            master_json["unconfirmed"]["skills"]
+        # удалить из unconfirmed.skills (str)
+        master_json["unconfirmed"]["skills"] = remove_from_str_list(
+            master_json["unconfirmed"].get("skills", [])
         )
 
-        # добавить в explicitly_not_used.skills если нет
-        if not any(
-            x.get("term", "").lower() == term_lower
-            for x in master_json["explicitly_not_used"]["skills"]
-        ):
-            master_json["explicitly_not_used"]["skills"].append({"term": term_name})
+        # добавить в explicitly_not_used.skills (str)
+        if not exists_in_str_list(master_json["explicitly_not_used"]["skills"]):
+            master_json["explicitly_not_used"]["skills"].append(term_name)
 
     elif term_type == "keyword":
 
-        # удалить из keywords
-        master_json["keywords"] = remove_term(master_json.get("keywords", []))
-
-        # удалить из unconfirmed.keywords
-        master_json["unconfirmed"]["keywords"] = remove_term(
-            master_json["unconfirmed"]["keywords"]
+        # удалить из keywords (dict)
+        master_json["keywords"] = remove_from_dict_list(
+            master_json.get("keywords", [])
         )
 
-        # добавить в explicitly_not_used.keywords если нет
-        if not any(
-            x.get("term", "").lower() == term_lower
-            for x in master_json["explicitly_not_used"]["keywords"]
-        ):
-            master_json["explicitly_not_used"]["keywords"].append({"term": term_name})
+        # удалить из unconfirmed.keywords (str)
+        master_json["unconfirmed"]["keywords"] = remove_from_str_list(
+            master_json["unconfirmed"].get("keywords", [])
+        )
+
+        # добавить в explicitly_not_used.keywords (str)
+        if not exists_in_str_list(master_json["explicitly_not_used"]["keywords"]):
+            master_json["explicitly_not_used"]["keywords"].append(term_name)
 
     else:
         raise ValueError("term_type must be 'hard', 'soft', or 'keyword'")
+
+    # --- защитная чистка experience ---
+    for exp in master_json.get("experience", []):
+        for bullet in exp.get("bullets", []):
+            if term_type in ("hard", "soft"):
+                bullet["skills_used"] = [
+                    s for s in bullet.get("skills_used", [])
+                    if isinstance(s, str) and s.lower() != term_lower
+                ]
+            elif term_type == "keyword":
+                bullet["keyword_used"] = [
+                    k for k in bullet.get("keyword_used", [])
+                    if isinstance(k, str) and k.lower() != term_lower
+                ]
 
     return master_json
 
