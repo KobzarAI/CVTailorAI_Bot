@@ -4,7 +4,6 @@ import json
 from resume_utils import (
     merge_jsons,
     format_google_doc_content,
-    term_in_list,
     find_gaps_and_update_master,
     filter_and_rank_bullets,
     match_terms,
@@ -297,7 +296,7 @@ async def term_not_used_endpoint(request: Request):
     term_type = data.get("term_type")
     master_resume = data.get("master_resume", {})
 
-    updated_master = term_not_used(
+    updated_master = Term_not_used(
         term_name=term_name,
         term_type=term_type,
         master_json=master_resume
