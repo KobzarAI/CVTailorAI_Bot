@@ -1456,6 +1456,91 @@ def normalize_master_resume(master_resume: dict) -> dict:
 
         exp["duration_years"] = duration_years
 
+    # --- Шаг 6.5: восстановление confirmed_by из bullets + нормализация bullet связей ---
+
+    def normalize_term(t):
+        return t.strip() if isinstance(t, str) else t
+
+    # 1. Индексы
+    hard_map = {normalize_term(s.get("term", "")): s for s in hard_skills}
+    soft_map = {normalize_term(s.get("term", "")): s for s in soft_skills}
+    keyword_map = {normalize_term(k.get("term", "")): k for k in keywords}
+
+    # Для быстрого приоритета
+    def resolve_term_type(term):
+        if term in hard_map:
+            return "hard"
+        if term in soft_map:
+            return "soft"
+        if term in keyword_map:
+            return "keyword"
+        return None
+
+    # 2. Проход по буллетам
+    for exp in experience:
+        for bullet in exp.get("bullets", []) or []:
+            bullet_id = bullet.get("id")
+
+            skills_used = bullet.get("skills_used", []) or []
+            keyword_used = bullet.get("keyword_used", []) or []
+
+            new_skills_used = []
+            new_keyword_used = []
+
+            # Собираем все термины из обеих секций
+            combined_terms = []
+
+            for t in skills_used:
+                nt = normalize_term(t)
+                if nt:
+                    combined_terms.append(nt)
+
+            for t in keyword_used:
+                nt = normalize_term(t)
+                if nt:
+                    combined_terms.append(nt)
+
+            # Убираем дубликаты (сохраняя порядок)
+            seen = set()
+            unique_terms = []
+            for t in combined_terms:
+                if t not in seen:
+                    seen.add(t)
+                    unique_terms.append(t)
+
+            # 3. Распределение по категориям + confirmed_by
+            for term in unique_terms:
+                term_type = resolve_term_type(term)
+
+                if term_type == "hard":
+                    skill = hard_map[term]
+                    skill.setdefault("confirmed_by", [])
+                    if bullet_id not in skill["confirmed_by"]:
+                        skill["confirmed_by"].append(bullet_id)
+                    new_skills_used.append(term)
+
+                elif term_type == "soft":
+                    skill = soft_map[term]
+                    skill.setdefault("confirmed_by", [])
+                    if bullet_id not in skill["confirmed_by"]:
+                        skill["confirmed_by"].append(bullet_id)
+                    new_skills_used.append(term)
+
+                elif term_type == "keyword":
+                    kw = keyword_map[term]
+                    kw.setdefault("confirmed_by", [])
+                    if bullet_id not in kw["confirmed_by"]:
+                        kw["confirmed_by"].append(bullet_id)
+                    new_keyword_used.append(term)
+
+                else:
+                    # неизвестные не трогаем (их обработает существующая логика unknown)
+                    new_keyword_used.append(term)
+
+            # 4. Перезаписываем буллет в нормализованном виде
+            bullet["skills_used"] = new_skills_used
+            bullet["keyword_used"] = new_keyword_used
+
     # --- Шаг 7: восстановление секции unconfirmed на основе пустого confirmed_by ---
     unconfirmed_skills = set(master_resume.get("unconfirmed", {}).get("skills", []))
     unconfirmed_keywords = set(master_resume.get("unconfirmed", {}).get("keywords", []))
