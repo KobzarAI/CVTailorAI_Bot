@@ -2,79 +2,80 @@
 
 ## TL;DR
 
-This project is a small FastAPI backend that helps adapt a structured resume to a specific job description.
+This project is a FastAPI backend for tailoring a structured resume to a target job description.
 
-It does three main things:
+It focuses on three jobs:
 
-- keeps a `master_resume` JSON in a consistent state;
-- selects the most relevant bullets, skills, and keywords for a target vacancy;
-- prepares output for ATS scoring and Google Docs formatting.
+- keep `master_resume` JSON consistent;
+- select the most relevant bullets, skills, and keywords for a vacancy;
+- prepare resume output for ATS scoring and Google Docs formatting.
 
-The whole project currently lives in two main files:
+The main code is now split into:
 
-- `app.py` - HTTP API layer;
-- `resume_utils.py` - business logic and data transformation.
+- `app.py` - HTTP API, security, request guards, and route handlers;
+- `api_models.py` - Pydantic request and response models;
+- `resume_utils.py` - business logic and resume transformations.
 
 ---
 
 ## What The Service Does
 
-The API expects structured JSON rather than raw files.
+The API works with structured JSON, not raw `.docx` or `.pdf` files.
 
 Core responsibilities:
 
-- merge new confirmed terms and generated bullets into the master resume;
-- detect gaps between a vacancy extract and the current master resume;
-- build an adapted resume with prioritized bullets;
+- merge confirmed terms and generated bullets into the master resume;
+- detect gaps between vacancy requirements and the current resume;
+- build an adapted resume with prioritized bullet points;
 - normalize inconsistent resume JSON;
-- convert resume JSON into text markup for Google Docs;
-- compute ATS-like similarity metrics between a vacancy and a resume;
-- help a client UI or bot confirm skills and keywords against bullets.
+- convert resume JSON into custom text markup for Google Docs;
+- compute ATS-like similarity metrics between a resume and a vacancy;
+- support UI or bot flows for confirming terms against bullets.
 
-This means the service is best viewed as a resume-tailoring engine, not as a full product UI.
+This backend is best understood as a resume-tailoring engine rather than a full product UI.
 
 ---
 
 ## High-Level Flow
 
-### 1. Input data
+### 1. Input
 
-The backend works with two main objects:
+The backend mainly works with two objects:
 
 - `master_resume` - the source-of-truth resume in JSON form;
-- `extract` - structured job requirements, usually prepared by an upstream parser or another service.
+- `extract` - structured job requirements, usually produced by an upstream parser or another service.
 
 ### 2. Normalize
 
-`/normalize_master` cleans and stabilizes the resume:
+`/normalize_master` repairs and stabilizes resume structure:
 
 - restores missing sections;
 - deduplicates bullets by text;
 - renumbers bullet IDs;
-- recalculates `confirmed_by`;
+- rebuilds `confirmed_by`;
 - rebuilds `unconfirmed`;
-- collects unknown terms from bullets.
+- captures unknown terms from bullets.
 
 ### 3. Find missing terms
 
-`/find_gaps` compares vacancy requirements with the resume and adds missing skills or keywords into `unconfirmed`.
+`/find_gaps` compares the vacancy extract against the resume and adds missing skills or keywords into `unconfirmed`.
 
 ### 4. Generate an adapted resume
 
 `/generate_adapted_resume`:
 
-- measures baseline and adjusted term match;
-- selects the best bullets using weighted heuristics;
+- measures baseline and adjusted match rates;
+- ranks bullets using weighted heuristics;
 - limits overload per bullet and per company;
-- returns the adapted resume plus helper payloads for later editing.
+- returns an adapted resume plus helper payloads for later editing.
 
 ### 5. Export and score
 
 The service can then:
 
-- turn the resume into Google Docs-friendly text via `/cv_to_text`;
-- produce Google Docs formatting requests via `/format_google_doc`;
-- estimate ATS-style similarity via `/ats_score`.
+- turn resume JSON into Google Docs-friendly text via `/cv_to_text`;
+- produce Google Docs `batchUpdate` requests via `/format_google_doc`;
+- estimate ATS-like similarity via `/ats_score`.
 
 ---
 
@@ -83,6 +84,7 @@ The service can then:
 ```text
 CVTailorAI_Bot/
 |- app.py
+|- api_models.py
 |- resume_utils.py
 |- requirements.txt
 |- test_integrity.py
@@ -107,13 +109,14 @@ CVTailorAI_Bot/
 | `POST /cv_to_text` | Convert resume JSON to custom text markup |
 | `POST /push_bullets` | Push edited bullet texts back into the resume |
 | `POST /ats_score` | Calculate ATS-like metrics for vacancy vs resume |
-| `POST /analyze_job` | Check whether terms from `extract` are present in raw job text |
+| `POST /analyze_job` | Check whether terms from `extract` appear in raw job text |
 | `POST /skills2master` | Move classified skills into the master resume |
 | `POST /bullets2buttons` | Build button payloads from bullets |
 | `POST /term_not_used` | Mark a term as explicitly not used |
 | `POST /get_company_bullets` | Return bullets for one company |
 | `POST /confirm_term` | Link a term to a bullet |
 | `POST /add_new_bullet` | Add a new bullet and confirm the linked term |
+| `GET /health` | Lightweight public healthcheck |
 
 ---
 
@@ -121,7 +124,7 @@ CVTailorAI_Bot/
 
 ### `confirmed_by`
 
-Each skill or keyword can point to bullet IDs that prove it is used in experience.
+Each skill or keyword can reference bullet IDs that prove the term is used in experience.
 
 ### `unconfirmed`
 
@@ -148,13 +151,28 @@ The adapted resume builder uses a heuristic ranking algorithm:
 - each company gets a bullet cap based on employment duration;
 - after trimming, the algorithm tries to restore lost important coverage.
 
-This is a useful ranking strategy, but it is still heuristic rather than deterministic business truth.
+This is practical and useful, but still heuristic rather than hard business truth.
+
+---
+
+## Security And Runtime Guards
+
+The current API includes a first protection layer:
+
+- API key protection for protected endpoints;
+- Pydantic request and response models;
+- request body size limiting;
+- in-memory rate limiting;
+- request timeout enforcement;
+- sanitized internal error responses.
+
+Protected endpoints require the `X-API-Key` header.
 
 ---
 
 ## External Dependencies
 
-Required packages are listed in `requirements.txt`:
+Required packages:
 
 - `fastapi`
 - `uvicorn`
@@ -163,9 +181,14 @@ Required packages are listed in `requirements.txt`:
 - `huggingface_hub`
 - `requests`
 
-Optional environment variable:
+Environment variables:
 
-- `HF_TOKEN` - used for semantic similarity via Hugging Face inference.
+- `API_KEY` - required for protected API routes; sent via `X-API-Key`;
+- `HF_TOKEN` - optional; used for semantic similarity via Hugging Face inference;
+- `MAX_REQUEST_BODY_BYTES` - optional; default `1048576`;
+- `RATE_LIMIT_REQUESTS` - optional; default `60`;
+- `RATE_LIMIT_WINDOW_SECONDS` - optional; default `60`;
+- `REQUEST_TIMEOUT_SECONDS` - optional; default `15`.
 
 If the Hugging Face call fails, ATS scoring falls back to TF-IDF cosine similarity.
 
@@ -179,13 +202,33 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+Set an API key:
+
+```bash
+set API_KEY=replace-me
+```
+
 Start the API:
 
 ```bash
 uvicorn app:app --reload
 ```
 
-Run integrity tests:
+Verification:
+```bash
+python -m py_compile app.py api_models.py test_integrity.py
+python -m unittest -v test_integrity.py
+```
+Example request:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/cv_to_text" ^
+  -H "Content-Type: application/json" ^
+  -H "X-API-Key: replace-me" ^
+  -d "{...}"
+```
+
+Run tests:
 
 ```bash
 python -m unittest -v test_integrity.py
@@ -193,140 +236,147 @@ python -m unittest -v test_integrity.py
 
 ---
 
-## Test Coverage Added In `test_integrity.py`
+## Test Coverage In `test_integrity.py`
 
-The included test file checks the most important integrity signals without needing network access:
+The current test suite checks both business logic and API-hardening behavior:
 
 - modules import successfully;
-- expected API routes are registered;
+- expected routes are registered;
+- healthcheck works without auth;
+- protected routes reject missing API keys;
+- validation failures return structured `422` responses;
+- oversized payloads return `413`;
+- rate limiting returns `429`;
+- timeouts return `504`;
+- internal failures are sanitized into safe `500` responses;
 - `normalize_master_resume` restores a consistent structure;
 - missing vacancy terms are moved into `unconfirmed`;
 - adapted resume generation keeps required terms and sane bullet payloads;
 - text export markup is produced correctly;
-- ATS scoring works even when semantic API scoring falls back to TF-IDF;
+- ATS scoring falls back to TF-IDF when semantic scoring is unavailable;
 - adding a new bullet preserves two-way links between terms and bullets.
 
-This is not full coverage, but it is a good baseline regression suite for the current codebase.
+This is a solid baseline, but it is not yet a full contract test suite.
 
 ---
 
-## Known Vulnerabilities And Risks
+## Remaining Risks And Vulnerabilities
 
-These are the main issues visible in the current implementation.
+The biggest remaining risks are below.
 
-### 1. No authentication or authorization
+### 1. Authentication is still basic
 
-All endpoints are open in `app.py`.
-
-Impact:
-
-- anyone who can reach the service can call resume mutation endpoints;
-- if deployed publicly, a third party could modify or process resume data without restriction.
-
-Recommendation:
-
-- add API key, OAuth, JWT, or gateway-level protection before public deployment.
-
-### 2. No request schema validation
-
-Most handlers call `await request.json()` and then pull fields with `.get(...)` instead of using Pydantic models.
+The service currently uses one shared API key.
 
 Impact:
 
-- malformed bodies can silently produce inconsistent state;
-- nested shape errors may fail only at runtime;
-- input contracts are hard to reason about and easy to break.
+- no per-user identity or role separation;
+- no tenant isolation;
+- leaked keys grant broad access.
 
 Recommendation:
 
-- replace raw dict handling with request and response models.
+- move to OAuth, JWT, or gateway-backed auth for production.
+
+### 2. Validation is improved, but the nested schema is still flexible
+
+Pydantic now validates request shape, but several nested sections still allow extra fields to preserve compatibility with existing resume payloads.
+
+Impact:
+
+- unknown nested fields can still enter the system;
+- the data contract is safer than before, but not yet fully strict.
+
+Recommendation:
+
+- progressively tighten nested models once real payload variants are fully documented.
 
 ### 3. Sensitive data may be sent to a third party
 
-`/ats_score` can send resume text and job text to Hugging Face inference when `HF_TOKEN` is configured.
+`/ats_score` can send resume text and job text to Hugging Face when `HF_TOKEN` is configured.
 
 Impact:
 
 - resume content may leave your infrastructure;
-- this can create privacy, compliance, or client confidentiality issues.
+- this may create privacy or compliance issues.
 
 Recommendation:
 
-- document this clearly, add an opt-in flag, or move semantic scoring to a controlled internal service.
+- document this clearly, add explicit opt-in behavior, or move semantic scoring to an internal service.
 
-### 4. Potential denial-of-service through large payloads
+### 4. Rate limiting is in-memory only
 
-The service accepts arbitrary JSON bodies and can run expensive text/vector operations on them.
+Rate limiting now exists, but it is process-local.
 
 Impact:
 
-- very large `resume_text`, `job_text`, or resume JSON payloads can cause heavy CPU or memory usage;
-- repeated calls may degrade the service.
+- limits reset on restart;
+- limits are not shared across multiple instances;
+- distributed deployments can bypass per-process counters.
 
 Recommendation:
 
-- add body size limits, request timeouts, rate limiting, and payload validation.
+- move rate limiting to a proxy or shared store such as Redis.
 
-### 5. Raw exception messages are returned to clients
+### 5. Timeout enforcement is best-effort
 
-Several endpoints expose `str(e)` in HTTP responses.
+The API now returns timeouts, but some worker-thread tasks may continue briefly after the client already received a timeout response.
 
 Impact:
 
-- internal implementation details can leak to clients;
-- error text can reveal data shape assumptions and internal logic.
+- wasted compute after timeout;
+- harder capacity planning under load.
 
 Recommendation:
 
-- return stable user-safe error messages and log internal exceptions server-side.
+- move long-running work to cancellable workers or background jobs.
 
-### 6. Data integrity risk from heavy in-place normalization
+### 6. Data integrity risk from heavy normalization
 
 `normalize_master_resume` can renumber bullets, rebuild links, and move terms across sections.
 
 Impact:
 
 - external systems that cache bullet IDs may break;
-- unexpected input shapes can produce surprising mutations;
-- the function is powerful, but also easy to misuse in a larger workflow.
+- unexpected input shapes can still produce surprising mutations.
 
 Recommendation:
 
-- version the schema, document invariants, and add more fixture-based tests.
+- version the schema, document invariants, and add more fixture-based regression tests.
 
-### 7. No built-in rate limiting, audit logging, or access tracing
+### 7. No audit logging or mutation tracing
 
 Impact:
 
-- hard to investigate abuse or unintended use;
-- no clear per-user accountability for resume mutations.
+- hard to investigate abuse or unintended edits;
+- no clear actor history for resume mutations.
 
 Recommendation:
 
-- add structured request logs, correlation IDs, and rate limiting at API or proxy level.
+- add structured request logs, correlation IDs, actor IDs, and mutation audit records.
 
 ---
 
 ## Current Limitations
 
-- no README or API contract existed originally;
-- no CI or automated test suite existed originally;
 - no persistence layer is included;
 - no frontend is included;
-- no typed request/response models;
-- no dedicated security layer.
+- security is still single-key and stateless;
+- request throttling is local-memory only;
+- most business logic still lives in one very large utility module;
+- there is no CI pipeline in this repository yet.
 
 ---
 
 ## Suggested Next Improvements
 
-- add Pydantic models for every endpoint;
-- add authentication before any public deployment;
-- add request size limits and throttling;
-- split `resume_utils.py` into smaller focused modules;
-- add fixture-based tests for each endpoint contract;
-- add a sample `master_resume.json` and sample `extract.json` for local debugging;
-- add structured logging and safer error handling.
+- split `resume_utils.py` into focused modules such as normalization, ranking, export, and ATS;
+- add fixture-based endpoint contract tests;
+- add a sample `master_resume.json` and `extract.json` for local debugging;
+- add structured logging and audit trails;
+- move auth and throttling to production-grade infrastructure;
+- add a schema version to `master_resume` and `extract`;
+- add a dry-run mode for normalization and resume mutation endpoints.
 
 ---
 
@@ -336,13 +386,13 @@ The codebase is small, understandable, and already useful as a resume-tailoring 
 
 Its main strengths are:
 
-- compact logic;
 - clear business purpose;
-- practical end-to-end workflow for resume adaptation.
+- compact end-to-end workflow;
+- better API safety than before through typed models and request guards.
 
 Its main weaknesses are:
 
-- weak input validation;
-- no security boundary;
-- limited test coverage;
+- a still-flexible nested schema;
+- basic API-key security rather than production-grade auth;
+- limited observability;
 - a lot of logic concentrated in one large utility module.

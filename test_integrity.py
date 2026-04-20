@@ -1,9 +1,12 @@
 import copy
+import os
+import time
 import unittest
 from unittest.mock import patch
 
 import app as fastapi_app_module
 import resume_utils
+from fastapi.testclient import TestClient
 from resume_utils import (
     add_new_bullet,
     compute_ats_metrics,
@@ -233,6 +236,112 @@ class CodeIntegrityTests(unittest.TestCase):
         self.assertEqual(new_bullet["skills_used"], ["Leadership"])
         self.assertEqual(leadership_skill["confirmed_by"], [new_bullet["id"]])
         self.assertNotIn("Leadership", updated["unconfirmed"]["skills"])
+
+
+class ApiPriorityOneTests(unittest.TestCase):
+    def setUp(self):
+        fastapi_app_module.rate_limiter.reset()
+        self.client = TestClient(fastapi_app_module.app)
+        self.headers = {"X-API-Key": "test-key"}
+
+    def test_health_endpoint_is_public(self):
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_missing_api_key_is_rejected(self):
+        with patch.dict(os.environ, {"API_KEY": "test-key"}, clear=False):
+            response = self.client.post("/cv_to_text", json=build_master_resume())
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "Invalid or missing API key.")
+
+    def test_validation_errors_return_structured_422(self):
+        with patch.dict(os.environ, {"API_KEY": "test-key"}, clear=False):
+            response = self.client.post(
+                "/generate_adapted_resume",
+                headers=self.headers,
+                json={"extended_master_resume": build_master_resume()},
+            )
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json()
+        self.assertEqual(body["detail"], "Request validation failed.")
+        self.assertTrue(any("extract" in str(item["loc"]) for item in body["errors"]))
+
+    def test_request_body_limit_returns_413(self):
+        oversized_body = {
+            "job_text": "x" * 500,
+            "resume_text": "y" * 500,
+        }
+
+        with patch.dict(
+            os.environ,
+            {"API_KEY": "test-key", "MAX_REQUEST_BODY_BYTES": "200"},
+            clear=False,
+        ):
+            response = self.client.post("/ats_score", headers=self.headers, json=oversized_body)
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json()["error_code"], "request_too_large")
+
+    def test_rate_limit_returns_429(self):
+        with patch.dict(
+            os.environ,
+            {
+                "API_KEY": "test-key",
+                "RATE_LIMIT_REQUESTS": "1",
+                "RATE_LIMIT_WINDOW_SECONDS": "60",
+            },
+            clear=False,
+        ):
+            first = self.client.post("/cv_to_text", headers=self.headers, json=build_master_resume())
+            second = self.client.post("/cv_to_text", headers=self.headers, json=build_master_resume())
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+        self.assertEqual(second.json()["error_code"], "rate_limit_exceeded")
+
+    def test_unhandled_errors_are_sanitized(self):
+        with patch.dict(os.environ, {"API_KEY": "test-key"}, clear=False):
+            with patch.object(fastapi_app_module, "compute_ats_metrics", side_effect=RuntimeError("secret token")):
+                response = self.client.post(
+                    "/ats_score",
+                    headers=self.headers,
+                    json={"job_text": "python sql", "resume_text": "python sql"},
+                )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json()["detail"], "Internal server error.")
+        self.assertNotIn("secret token", response.text)
+
+    def test_request_timeout_returns_504(self):
+        def slow_compute(job_text, resume_text):
+            time.sleep(0.05)
+            return {
+                "ats_score(70-90)": 50.0,
+                "semantic(coverage_incl_synonyms_0.6-0.85)": 0.5,
+                "recall(JD->CV_0.6-0.85)": 0.5,
+                "precision(density_of_terms_0.4-0.7)": 0.5,
+                "overlap_keywords": ["python"],
+                "job_keywords": ["python"],
+                "resume_keywords": ["python"],
+            }
+
+        with patch.dict(
+            os.environ,
+            {"API_KEY": "test-key", "REQUEST_TIMEOUT_SECONDS": "0.01"},
+            clear=False,
+        ):
+            with patch.object(fastapi_app_module, "compute_ats_metrics", side_effect=slow_compute):
+                response = self.client.post(
+                    "/ats_score",
+                    headers=self.headers,
+                    json={"job_text": "python", "resume_text": "python"},
+                )
+
+        self.assertEqual(response.status_code, 504)
+        self.assertEqual(response.json()["error_code"], "request_timeout")
 
 
 if __name__ == "__main__":
