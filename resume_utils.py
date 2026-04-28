@@ -258,8 +258,13 @@ def find_gaps_and_update_master(extract, master_resume):
     if "keywords" not in master_resume:
         master_resume["keywords"] = []
 
+    # Helper to capitalize only if fully lowercase
+    def smart_capitalize(term):
+        return term if any(c.isupper() for c in term) else term[0].upper() + term[1:]
+
     # Helper to add to unconfirmed + master section without duplicates
     def add_unconfirmed_skill(term, typ):
+        term = smart_capitalize(term)
         # add to unconfirmed
         if term.lower() not in [s.lower() for s in master_resume["unconfirmed"]["skills"]]:
             master_resume["unconfirmed"]["skills"].append(term)
@@ -270,6 +275,7 @@ def find_gaps_and_update_master(extract, master_resume):
             skill_list.append({"term": term, "confirmed_by": []})
 
     def add_unconfirmed_keyword(term):
+        term = smart_capitalize(term)
         # add to unconfirmed
         if term.lower() not in [k.lower() for k in master_resume["unconfirmed"]["keywords"]]:
             master_resume["unconfirmed"]["keywords"].append(term)
@@ -1313,9 +1319,14 @@ def normalize_master_resume(master_resume: dict) -> dict:
     def normalize_term(t):
         return t.strip() if isinstance(t, str) else t
 
+    def smart_capitalize(term):
+        if not term:
+            return term
+        return term if any(c.isupper() for c in term) else term[0].upper() + term[1:]
+
     hard_terms = []
     for s in hard_skills:
-        term = normalize_term(s.get("term", ""))
+        term = smart_capitalize(normalize_term(s.get("term", "")))
         s["term"] = term
         hard_terms.append(term)
     hard_set = set(filter(None, hard_terms))
@@ -1323,7 +1334,7 @@ def normalize_master_resume(master_resume: dict) -> dict:
     # Filter soft: remove any whose term is in hard_set
     new_soft = []
     for s in soft_skills:
-        term = normalize_term(s.get("term", ""))
+        term = smart_capitalize(normalize_term(s.get("term", "")))
         s["term"] = term
         if term and term in hard_set:
             # удаляем дубликат из soft
@@ -1337,7 +1348,7 @@ def normalize_master_resume(master_resume: dict) -> dict:
     # Filter keywords: remove any that appear in hard_set or soft_set
     new_keywords = []
     for k in keywords:
-        term = normalize_term(k.get("term", ""))
+        term = smart_capitalize(normalize_term(k.get("term", "")))
         k["term"] = term
         if term and (term in hard_set or term in soft_set):
             continue
