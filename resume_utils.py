@@ -284,6 +284,14 @@ def find_gaps_and_update_master(extract, master_resume):
         if not term_in_list(term, master_resume["keywords"]):
             master_resume["keywords"].append({"term": term, "confirmed_by": []})
 
+    # Капитализируем уже существующие термины в мастере
+    for skill in master_resume.get("skills", {}).get("hard_skills", []):
+        skill["term"] = smart_capitalize(skill["term"])
+    for skill in master_resume.get("skills", {}).get("soft_skills", []):
+        skill["term"] = smart_capitalize(skill["term"])
+    for keyword in master_resume.get("keywords", []):
+        keyword["term"] = smart_capitalize(keyword["term"])
+
     # Check skills (hard/soft) with synonyms from extract
     for skill_req in extract.get("required_skills", []):
         term = skill_req["term"]
