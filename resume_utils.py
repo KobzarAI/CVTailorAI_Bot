@@ -448,6 +448,22 @@ def filter_and_rank_bullets(master_resume, extract):
     """
     master_resume = copy.deepcopy(master_resume) #перед нормализацией терминов, чтоб потом не переписывать весь код использующий мастер
 
+    def smart_capitalize(term):
+        if not term:
+            return term
+        return term if any(c.isupper() for c in term) else term[0].upper() + term[1:]
+
+    # ---------- 0. Исправление написания экстракта ----------
+    extract = copy.deepcopy(extract)
+    for group in ["required_skills", "required_keywords"]:
+        for item in extract.get(group, []):
+            item["term"] = smart_capitalize(item["term"])
+            item["synonyms"] = [smart_capitalize(s) for s in item.get("synonyms", [])]
+    for section in ["mandatory", "nice_to_have"]:
+        for key in ["skills", "keywords"]:
+            lst = extract.get(section, {}).get(key, [])
+            extract.setdefault(section, {})[key] = [smart_capitalize(t) for t in lst]
+
     # ---------- 1. Подготовка: map термин → root + приоритет ----------
     term_to_root = {}
     priority_map = {}
